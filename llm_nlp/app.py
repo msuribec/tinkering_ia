@@ -426,13 +426,13 @@ with tab3:
 with tab4:
     st.title("Agente Especializado – Tutor de Machine Learning")
 
-    # ── Sidebar controls for agent ────────────────────────────────────────────
-    with st.sidebar:
-        st.subheader("Agente – Parámetros")
-        agent_temp = st.slider("Temperatura del agente", 0.0, 2.0, 0.5, 0.05,
-                                key="agent_temp")
-        agent_max_tok = st.slider("Max tokens agente", 50, 2048, 600, 50,
-                                   key="agent_max_tok")
+    # ── Controls inside the tab ───────────────────────────────────────────────
+    with st.expander("⚙️ Parámetros del agente", expanded=False):
+        col_ap1, col_ap2 = st.columns(2)
+        agent_temp = col_ap1.slider("Temperatura", 0.0, 2.0, 0.5, 0.05,
+                                     key="agent_temp")
+        agent_max_tok = col_ap2.slider("Max tokens", 50, 2048, 600, 50,
+                                        key="agent_max_tok")
 
     # Pricing (USD per 1K tokens) – Groq llama-3.3-70b approx public pricing
     PRICE_IN = 0.00059 / 1000   # per token
