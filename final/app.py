@@ -207,6 +207,7 @@ if api_key and not categories_file:
     
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
         categories_file = True
+        use_default_categories= True
 
 if api_key and categories_file:
 
