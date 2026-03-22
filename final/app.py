@@ -27,7 +27,7 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
-    st.header("Step 1 - Set up API Key 🗝️")
+    st.header("Set up API Key 🗝️")
     api_key = st.text_input(
         "Paste your Google Gemini API Key",
         type="password",
@@ -44,7 +44,7 @@ with st.sidebar:
     categories_file = None
     if api_key:
         st.markdown("---")
-        st.header("Step 1 - Load your categories file 📂")
+        st.header("Load your categories file 📂")
 
         categories_file = st.file_uploader(
             "Your categories file (TXT or CSV)",
@@ -200,7 +200,7 @@ if api_key and categories_file:
             st.session_state.categories_approved = False
             st.session_state.approved_categories = []
 
-        st.markdown(f"**{len(categories)} categories loaded:**")
+        st.markdown(f"**{len(categories)} categories where loaded from the file:**")
         for c in categories:
             st.markdown(f"- {c}")
 
@@ -219,17 +219,27 @@ if api_key and categories_file:
 elif api_key and not categories_file:
     st.header("Step 2 - Upload your categories file in the sidebar.")
     st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
-    st.info("If you don't have a custom categories file, you can download the sample one in the button below")
-    example_txt = (
-        "Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
-        "Household\nClothing\nUtilities\nOther"
-    )
-    st.download_button(
-        "📥 Download example categories.txt",
-        data=example_txt,
-        file_name="categories_example.txt",
-        mime="text/plain",
-    )
+    st.info("If you don't have a custom categories file, you can download click the 'Use default' button")
+    st.markdown("The default categories are: \n Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
+        "Household\nClothing\nUtilities\nOther")
+    
+    default_categories = [
+        "Food & Groceries",
+        "Transport",
+        "Entertainment",
+        "Health & Beauty",
+        "Household",
+        "Clothing",
+        "Utilities",
+        "Other"
+    ]
+
+    if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
+            st.session_state.categories_approved = True
+            st.session_state.approved_categories = categories
+            categories = default_categories
+            st.rerun()
+
 
 
 
