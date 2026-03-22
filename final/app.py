@@ -35,7 +35,14 @@ with st.sidebar:
         "Google Gemini API Key",
         type="password",
         placeholder="AIza...",
-        help="Free at aistudio.google.com — no credit card needed.",
+        help=(
+            "Free at aistudio.google.com — no credit card needed.\n\n"
+            "How to get a free key:\n"
+            "1. Go to Google AI Studio: https://aistudio.google.com\n"
+            "2. Sign in with Google\n"
+            "3. Click Get API Key -> Create API Key\n"
+            "4. Paste it above"
+        ),
     )
 
 if not api_key:
