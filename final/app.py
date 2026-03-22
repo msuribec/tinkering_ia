@@ -41,25 +41,29 @@ with st.sidebar:
             "4. Paste it above"
         ),
     )
-    st.markdown("---")
-    st.header("Step 2 — Upload your expense categories 📂")
-    st.caption("`.txt` with one category per line, or `.csv` with a `category` column.")
+    categories_file = None
+    if api_key:
+        st.markdown("---")
+        st.header("Step 1 - Load your categories file 📂")
+        st.caption("`.txt` with one category per line, or `.csv` with a `category` column.")
 
-    example_txt = (
-        "Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
-        "Household\nClothing\nUtilities\nOther"
-    )
-    st.download_button(
-        "📥 Download example categories.txt",
-        data=example_txt,
-        file_name="categories_example.txt",
-        mime="text/plain",
-    )
+        example_txt = (
+            "Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
+            "Household\nClothing\nUtilities\nOther"
+        )
+        st.download_button(
+            "📥 Download example categories.txt",
+            data=example_txt,
+            file_name="categories_example.txt",
+            mime="text/plain",
+        )
 
-    categories_file = st.file_uploader(
-        "Your categories file (TXT or CSV)",
-        type=["csv", "txt"],
-    )
+        categories_file = st.file_uploader(
+            "Your categories file (TXT or CSV)",
+            type=["csv", "txt"],
+        )
+    else:
+        st.caption("Enter your API key to unlock category upload.")
 
 # ── Helper: parse categories file ────────────────────────────────────────────
 
@@ -180,7 +184,8 @@ st.markdown(
 )
 
 if not api_key:
-    st.warning("Step 1 - Enter your Gemini API key in the sidebar.")
+    st.info("Step 1 - Enter your Gemini API key in the sidebar.")
+    st.stop()
 
 if "categories_approved" not in st.session_state:
     st.session_state.categories_approved = False
@@ -224,7 +229,7 @@ if categories_file:
     else:
         st.error("No categories found in the uploaded file. Check the format and try again.")
 else:
-    st.info("👈 Upload your categories file from the sidebar to continue.")
+    st.info("Step 1 - Upload your categories file in the sidebar.")
 
 
 
