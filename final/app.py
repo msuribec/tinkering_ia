@@ -27,8 +27,9 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
+    st.header("Step 1 - Set up API Key 🗝️")
     api_key = st.text_input(
-        "Step 1 - Set up Google Gemini API Key",
+        "Paste your Google Gemini API Key",
         type="password",
         placeholder="AIza...",
         help=(
