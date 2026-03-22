@@ -198,17 +198,6 @@ categories: list[str] = []
 categories_valid = False
 use_default_categories = False
 
-def approve_categories():
-
-    if not st.session_state.categories_approved:
-        if st.button("✅ Approve Categories", type="primary", use_container_width=True):
-            st.session_state.categories_approved = True
-            st.session_state.approved_categories = categories
-            st.rerun()
-        st.info("Please approve these categories to continue.")
-    else:
-        st.session_state.approved_categories = categories
-        st.success("Categories approved. Continue with receipt upload below.")
 
 if api_key and not categories_file:
     st.header("Step 2 - Upload your categories file in the sidebar.")
@@ -235,7 +224,15 @@ if api_key and categories_file:
             st.markdown(f"- {c}")
 
         categories_valid = True
-        approve_categories()
+        if not st.session_state.categories_approved:
+            if st.button("✅ Approve Categories", type="primary", use_container_width=True):
+                st.session_state.categories_approved = True
+                st.session_state.approved_categories = categories
+                st.rerun()
+            st.info("Please approve these categories to continue.")
+        else:
+            st.session_state.approved_categories = categories
+            st.success("Categories approved. Continue with receipt upload below.")
 
     else:
         try:
