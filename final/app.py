@@ -1564,7 +1564,7 @@ with tab_search:
     # or pass it to the client constructor.
     models = list(genai.list_models())
     for model in models:
-        print(model.name)
+        st.markdown(model.name)
 
 
     if not history:
