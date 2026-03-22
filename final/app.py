@@ -1567,7 +1567,7 @@ with tab_search:
     client = genai.Client()
 
     for model in client.models.list():
-    print(model.name)
+        print(model.name)
 
 
     if not history:
