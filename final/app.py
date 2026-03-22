@@ -174,8 +174,6 @@ st.markdown(
 if not api_key:
     st.header("Step 1 — Enter your Gemini API key in the sidebar 🔑")
 
-
-
 if "categories_approved" not in st.session_state:
     st.session_state.categories_approved = False
 if "categories_signature" not in st.session_state:
@@ -187,7 +185,7 @@ if "approved_categories" not in st.session_state:
 categories: list[str] = []
 categories_valid = False
 
-if categories_file:
+if api_key and categories_file:
     try:
         categories = parse_categories(categories_file)
     except Exception as exc:
@@ -218,7 +216,7 @@ if categories_file:
     else:
         st.error("No categories found in the uploaded file. Check the format and try again.")
 else:
-    st.info("Step 1 - Upload your categories file in the sidebar.")
+    st.header("Step 2 - Upload your categories file in the sidebar.")
     st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
     st.info("If you don't have a custom categories file, you can download the sample one in the button below")
     example_txt = (
