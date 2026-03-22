@@ -187,11 +187,7 @@ categories: list[str] = []
 categories_valid = False
 
 if api_key and categories_file:
-    try:
-        categories = parse_categories(categories_file)
-    except Exception as exc:
-        st.error(f"Could not read categories file: {exc}")
-        categories = []
+
 
     if categories:
         current_signature = f"{categories_file.name}:{categories_file.size}"
@@ -215,7 +211,12 @@ if api_key and categories_file:
             st.session_state.approved_categories = categories
             st.success("Categories approved. Continue with receipt upload below.")
     else:
-        st.error("No categories found in the uploaded file. Check the format and try again.")
+        try:
+            categories = parse_categories(categories_file)
+        except Exception as exc:
+            st.error(f"Could not read categories file: {exc}")
+            categories = []
+
 elif api_key and not categories_file:
     st.header("Step 2 - Upload your categories file in the sidebar.")
     st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
@@ -235,10 +236,9 @@ elif api_key and not categories_file:
     ]
 
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
-            st.session_state.categories_approved = True
-            st.session_state.approved_categories = categories
-            categories = default_categories
-            st.rerun()
+        categories_valid = True
+        categories = default_categories
+        
 
 
 
