@@ -7,8 +7,6 @@ import re
 from PIL import Image
 import io
 from typing import Optional
-import os
-import sys
 
 default_categories = [
     "Food & Groceries",
@@ -32,18 +30,20 @@ st.markdown("*Upload a receipt and your expense categories — get an instant br
 
 
 def restart_streamlit_app() -> None:
-    """Hard-restart the current Streamlit process."""
+    """Reset all app/session data and force fresh widgets."""
     st.cache_data.clear()
     st.cache_resource.clear()
+    next_seed = st.session_state.get("widget_seed", 0) + 1
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    try:
-        os.execv(
-            sys.executable,
-            [sys.executable, "-m", "streamlit", "run", os.path.abspath(__file__)],
-        )
-    except Exception:
-        st.rerun()
+    st.session_state["widget_seed"] = next_seed
+    st.rerun()
+
+
+if "widget_seed" not in st.session_state:
+    st.session_state["widget_seed"] = 0
+
+widget_seed = st.session_state["widget_seed"]
 
 
 # ── Sidebar: API key ──────────────────────────────────────────────────────────
@@ -59,6 +59,7 @@ with st.sidebar:
     st.header("Set up API Key 🗝️")
     api_key = st.text_input(
         "Paste your Google Gemini API Key",
+        key=f"api_key_{widget_seed}",
         type="password",
         placeholder="AIza...",
         help=(
@@ -78,6 +79,7 @@ with st.sidebar:
         categories_file = st.file_uploader(
             "Your categories file (TXT or CSV)",
             type=["csv", "txt"],
+            key=f"categories_file_{widget_seed}",
         )
     else:
         st.caption("Enter your API key to unlock category upload.")
@@ -289,6 +291,7 @@ st.header("Step 2 — Upload your receipt 📷")
 receipt_file = st.file_uploader(
     "Photo of your receipt or invoice (JPG / PNG / WEBP)",
     type=["jpg", "jpeg", "png", "webp"],
+    key=f"receipt_file_{widget_seed}",
 )
 
 if receipt_file:
