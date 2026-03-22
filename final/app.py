@@ -206,10 +206,9 @@ if api_key and not categories_file:
         "Household\nClothing\nUtilities\nOther")
     
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
-        categories_file = True
         use_default_categories= True
 
-if api_key and categories_file:
+if api_key and (categories_file or use_default_categories):
 
     if categories:
         if use_default_categories:
