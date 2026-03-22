@@ -1562,9 +1562,8 @@ with tab_search:
 
     # Make sure you have your API key set up as an environment variable
     # or pass it to the client constructor.
-    client = genai.Client()
-
-    for model in client.models.list():
+    models = list(genai.list_models())
+    for model in models:
         print(model.name)
 
 
