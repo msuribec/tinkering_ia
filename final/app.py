@@ -7,6 +7,8 @@ import re
 from PIL import Image
 import io
 from typing import Optional
+import os
+import sys
 
 default_categories = [
     "Food & Groceries",
@@ -27,6 +29,22 @@ st.set_page_config(
 
 st.title("💰 My-Expense Auditor")
 st.markdown("*Upload a receipt and your expense categories — get an instant breakdown and a savings tip by voice.*")
+
+
+def restart_streamlit_app() -> None:
+    """Hard-restart the current Streamlit process."""
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    try:
+        os.execv(
+            sys.executable,
+            [sys.executable, "-m", "streamlit", "run", os.path.abspath(__file__)],
+        )
+    except Exception:
+        st.rerun()
+
 
 # ── Sidebar: API key ──────────────────────────────────────────────────────────
 with st.sidebar:
@@ -66,9 +84,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("End session", use_container_width=True):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
+        restart_streamlit_app()
 
 # ── Helper: parse categories file ────────────────────────────────────────────
 
