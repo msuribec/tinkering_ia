@@ -40,6 +40,25 @@ with st.sidebar:
             "4. Paste it above"
         ),
     )
+    st.markdown("---")
+    st.header("Step 2 — Upload your expense categories 📂")
+    st.caption("`.txt` with one category per line, or `.csv` with a `category` column.")
+
+    example_txt = (
+        "Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
+        "Household\nClothing\nUtilities\nOther"
+    )
+    st.download_button(
+        "📥 Download example categories.txt",
+        data=example_txt,
+        file_name="categories_example.txt",
+        mime="text/plain",
+    )
+
+    categories_file = st.file_uploader(
+        "Your categories file (TXT or CSV)",
+        type=["csv", "txt"],
+    )
 
 if not api_key:
     st.warning("👈 Enter your free Gemini API key in the sidebar to begin.")
@@ -154,24 +173,7 @@ receipt_file = st.file_uploader(
 )
 
 # ── Step 2: categories file ───────────────────────────────────────────────────
-st.header("Step 2 — Upload your expense categories 📂")
-st.caption("`.txt` with one category per line, or `.csv` with a `category` column.")
-
-example_txt = (
-    "Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
-    "Household\nClothing\nUtilities\nOther"
-)
-st.download_button(
-    "📥 Download example categories.txt",
-    data=example_txt,
-    file_name="categories_example.txt",
-    mime="text/plain",
-)
-
-categories_file = st.file_uploader(
-    "Your categories file (TXT or CSV)",
-    type=["csv", "txt"],
-)
+# (Moved to sidebar)
 
 # ── Main flow ─────────────────────────────────────────────────────────────────
 if receipt_file and categories_file:
