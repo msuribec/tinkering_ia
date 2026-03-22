@@ -172,7 +172,8 @@ st.markdown(
 )
 
 if not api_key:
-    st.header("Step 1 — Enter your Gemini API key in the sidebar 🔑")
+    st.header("Step 1 — Set up an api key 🔑")
+    st.info("Enter your Gemini API key in the sidebar")
 
 if "categories_approved" not in st.session_state:
     st.session_state.categories_approved = False
