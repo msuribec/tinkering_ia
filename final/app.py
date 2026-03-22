@@ -198,6 +198,18 @@ categories: list[str] = []
 categories_valid = False
 use_default_categories = False
 
+def approve_categories():
+
+    if not st.session_state.categories_approved:
+        if st.button("✅ Approve Categories", type="primary", use_container_width=True):
+            st.session_state.categories_approved = True
+            st.session_state.approved_categories = categories
+            st.rerun()
+        st.info("Please approve these categories to continue.")
+    else:
+        st.session_state.approved_categories = categories
+        st.success("Categories approved. Continue with receipt upload below.")
+
 if api_key and not categories_file:
     st.header("Step 2 - Upload your categories file in the sidebar.")
     st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
@@ -207,8 +219,9 @@ if api_key and not categories_file:
     
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
         use_default_categories= True
+        approve_categories()
 
-if api_key and (categories_file or use_default_categories):
+if api_key and categories_file:
 
     if categories:
         if use_default_categories:
@@ -227,15 +240,8 @@ if api_key and (categories_file or use_default_categories):
 
             categories_valid = True
 
-        if not st.session_state.categories_approved:
-            if st.button("✅ Approve Categories", type="primary", use_container_width=True):
-                st.session_state.categories_approved = True
-                st.session_state.approved_categories = categories
-                st.rerun()
-            st.info("Please approve these categories to continue.")
-        else:
-            st.session_state.approved_categories = categories
-            st.success("Categories approved. Continue with receipt upload below.")
+            approve_categories()
+
     else:
         try:
             categories = parse_categories(categories_file)
@@ -244,8 +250,6 @@ if api_key and (categories_file or use_default_categories):
             categories = []
 
         
-
-
 
 
 if not (api_key and categories_valid and st.session_state.categories_approved):
