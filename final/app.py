@@ -179,6 +179,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+if not api_key:
+    st.warning("Step 1 - Enter your Gemini API key in the sidebar.")
+
 if "categories_approved" not in st.session_state:
     st.session_state.categories_approved = False
 if "categories_signature" not in st.session_state:
@@ -223,8 +226,7 @@ if categories_file:
 else:
     st.info("👈 Upload your categories file from the sidebar to continue.")
 
-if not api_key:
-    st.warning("👈 Enter your Gemini API key in the sidebar.")
+
 
 if not (api_key and categories_valid and st.session_state.categories_approved):
     st.stop()
