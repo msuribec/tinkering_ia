@@ -19,19 +19,24 @@ st.markdown("*Upload a receipt and your expense categories — get an instant br
 
 # ── Sidebar: API key ──────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️ Configuration")
+    st.markdown(
+        """
+        <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <h3 style="margin: 0;">⚙️ Configuration</h3>
+            <span
+                title="1. Go to https://aistudio.google.com&#10;2. Sign in with Google&#10;3. Click Get API Key and create one&#10;4. Paste the key in the field below"
+                style="cursor: help; font-size: 1rem;"
+            >❓</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     api_key = st.text_input(
         "Google Gemini API Key",
         type="password",
         placeholder="AIza...",
         help="Free at aistudio.google.com — no credit card needed.",
     )
-    st.markdown("---")
-    st.markdown("**How to get a free key**")
-    st.markdown("1. Go to [Google AI Studio](https://aistudio.google.com)")
-    st.markdown("2. Sign in with Google")
-    st.markdown("3. Click **Get API Key → Create API Key**")
-    st.markdown("4. Paste it above ✅")
 
 if not api_key:
     st.warning("👈 Enter your free Gemini API key in the sidebar to begin.")
