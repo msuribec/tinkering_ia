@@ -28,56 +28,41 @@ st.set_page_config(
 st.title("💰 My-Expense Auditor")
 st.markdown("*Upload a receipt and your expense categories — get an instant breakdown and a savings tip by voice.*")
 
-if "api_key" not in st.session_state:
-    st.session_state.api_key = ""
-if "categories_approved" not in st.session_state:
-    st.session_state.categories_approved = False
-if "categories_signature" not in st.session_state:
-    st.session_state.categories_signature = ""
-if "approved_categories" not in st.session_state:
-    st.session_state.approved_categories = []
-if "step2_unlocked" not in st.session_state:
-    st.session_state.step2_unlocked = False
-
 # ── Sidebar: API key ──────────────────────────────────────────────────────────
-categories_file = None
 with st.sidebar:
-    if not st.session_state.step2_unlocked:
-        st.markdown(
-            """
-            <div style="display: flex; align-items: center; gap: 0.35rem;">
-                <h3 style="margin: 0;">⚙️ Configuration</h3>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.header("Set up API Key 🗝️")
-        st.text_input(
-            "Paste your Google Gemini API Key",
-            key="api_key",
-            type="password",
-            placeholder="AIza...",
-            help=(
-                "Free at aistudio.google.com — no credit card needed.\n\n"
-                "How to get a free key:\n"
-                "1. Go to Google AI Studio: https://aistudio.google.com\n"
-                "2. Sign in with Google\n"
-                "3. Click Get API Key -> Create API Key\n"
-                "4. Paste it above"
-            ),
-        )
-        if st.session_state.api_key:
-            st.markdown("---")
-            st.header("Load your categories file 📂")
-            categories_file = st.file_uploader(
-                "Your categories file (TXT or CSV)",
-                type=["csv", "txt"],
-                key="categories_file_upload",
-            )
-        else:
-            st.caption("Enter your API key to unlock category upload.")
+    st.markdown(
+        """
+        <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <h3 style="margin: 0;">⚙️ Configuration</h3>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.header("Set up API Key 🗝️")
+    api_key = st.text_input(
+        "Paste your Google Gemini API Key",
+        type="password",
+        placeholder="AIza...",
+        help=(
+            "Free at aistudio.google.com — no credit card needed.\n\n"
+            "How to get a free key:\n"
+            "1. Go to Google AI Studio: https://aistudio.google.com\n"
+            "2. Sign in with Google\n"
+            "3. Click Get API Key -> Create API Key\n"
+            "4. Paste it above"
+        ),
+    )
+    categories_file = None
+    if api_key:
+        st.markdown("---")
+        st.header("Load your categories file 📂")
 
-api_key = st.session_state.api_key
+        categories_file = st.file_uploader(
+            "Your categories file (TXT or CSV)",
+            type=["csv", "txt"],
+        )
+    else:
+        st.caption("Enter your API key to unlock category upload.")
 
 # ── Helper: parse categories file ────────────────────────────────────────────
 
@@ -197,14 +182,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if not api_key and not st.session_state.step2_unlocked:
+if not api_key:
     st.header("Step 1 — Set up an api key 🔑")
     st.info("Enter your Gemini API key in the sidebar")
 
+if "categories_approved" not in st.session_state:
+    st.session_state.categories_approved = False
+if "categories_signature" not in st.session_state:
+    st.session_state.categories_signature = ""
+if "approved_categories" not in st.session_state:
+    st.session_state.approved_categories = []
+
+
 categories: list[str] = []
 categories_valid = False
+use_default_categories = False
 
-if not st.session_state.step2_unlocked and api_key and not categories_file:
+
+if api_key and not categories_file:
     st.header("Step 2 - Upload your categories file in the sidebar.")
     st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
     st.info("If you don't have a custom categories file, you can download click the 'Use default' button")
@@ -232,7 +227,7 @@ if not st.session_state.step2_unlocked and api_key and not categories_file:
         st.session_state.approved_categories = categories
         st.success("Categories approved. Continue with receipt upload below.")
 
-elif not st.session_state.step2_unlocked and api_key and categories_file:
+elif api_key and categories_file:
     try:
         categories = parse_categories(categories_file)
     except Exception as exc:
@@ -261,15 +256,7 @@ elif not st.session_state.step2_unlocked and api_key and categories_file:
             st.success("Categories approved. Continue with receipt upload below.")
 
 
-if not st.session_state.step2_unlocked:
-    if not (api_key and categories_valid and st.session_state.categories_approved):
-        st.stop()
-    st.session_state.step2_unlocked = True
-    st.rerun()
-
-categories = st.session_state.approved_categories
-if not categories:
-    st.error("No approved categories found. Please refresh and set up categories again.")
+if not (api_key and categories_valid and st.session_state.categories_approved):
     st.stop()
 
 genai.configure(api_key=api_key)
