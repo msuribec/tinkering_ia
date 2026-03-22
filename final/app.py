@@ -1562,10 +1562,6 @@ with tab_search:
 
     # Make sure you have your API key set up as an environment variable
     # or pass it to the client constructor.
-    models = list(genai.list_models())
-    for model in models:
-        st.markdown(model.name)
-
 
     if not history:
         st.info("No receipts yet. Analyze some receipts in the **Receipts** tab first.")
