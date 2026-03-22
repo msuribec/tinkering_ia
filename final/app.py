@@ -218,29 +218,24 @@ if api_key and not categories_file:
         "Household\nClothing\nUtilities\nOther")
     
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
-        use_default_categories= True
-        approve_categories()
+        categories_valid = True
+        categories = default_categories
 
 if api_key and categories_file:
-
     if categories:
-        if use_default_categories:
-            categories = default_categories
-            categories_valid = True
-        else:
-            current_signature = f"{categories_file.name}:{categories_file.size}"
-            if st.session_state.categories_signature != current_signature:
-                st.session_state.categories_signature = current_signature
-                st.session_state.categories_approved = False
-                st.session_state.approved_categories = []
 
-            st.markdown(f"**{len(categories)} categories where loaded from the file:**")
-            for c in categories:
-                st.markdown(f"- {c}")
+        current_signature = f"{categories_file.name}:{categories_file.size}"
+        if st.session_state.categories_signature != current_signature:
+            st.session_state.categories_signature = current_signature
+            st.session_state.categories_approved = False
+            st.session_state.approved_categories = []
 
-            categories_valid = True
+        st.markdown(f"**{len(categories)} categories where loaded from the file:**")
+        for c in categories:
+            st.markdown(f"- {c}")
 
-            approve_categories()
+        categories_valid = True
+        approve_categories()
 
     else:
         try:
@@ -248,8 +243,6 @@ if api_key and categories_file:
         except Exception as exc:
             st.error(f"Could not read categories file: {exc}")
             categories = []
-
-        
 
 
 if not (api_key and categories_valid and st.session_state.categories_approved):
