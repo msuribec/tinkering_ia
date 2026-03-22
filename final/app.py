@@ -153,6 +153,35 @@ def build_spending_export_csv(history: list[dict]) -> bytes:
     return dataframe_to_csv_bytes(df)
 
 
+def rebuild_receipt_data(
+    original_data: dict,
+    vendor: str,
+    date: str,
+    currency: str,
+    items: list[dict],
+) -> dict:
+    category_totals: dict[str, float] = {}
+    total = 0.0
+
+    for item in items:
+        price = round(float(item["price"]), 2)
+        category = item["category"]
+        total += price
+        category_totals[category] = round(category_totals.get(category, 0.0) + price, 2)
+
+    return {
+        **original_data,
+        "vendor": vendor.strip() or "Unknown",
+        "date": date.strip() or "Unknown",
+        "currency": currency.strip() or "$",
+        "items": items,
+        "total": round(total, 2),
+        "category_totals": category_totals,
+        "savings_tip": "",
+        "tip_language": "",
+    }
+
+
 def parse_uploaded_spending_history(file) -> list[dict]:
     content = file.read().decode("utf-8")
     file.seek(0)
@@ -853,35 +882,6 @@ def normalize_edited_items(items_df: pd.DataFrame, categories: list[str]) -> tup
         errors.append("Add at least one valid item before saving.")
 
     return cleaned_items, errors
-
-
-def rebuild_receipt_data(
-    original_data: dict,
-    vendor: str,
-    date: str,
-    currency: str,
-    items: list[dict],
-) -> dict:
-    category_totals: dict[str, float] = {}
-    total = 0.0
-
-    for item in items:
-        price = round(float(item["price"]), 2)
-        category = item["category"]
-        total += price
-        category_totals[category] = round(category_totals.get(category, 0.0) + price, 2)
-
-    return {
-        **original_data,
-        "vendor": vendor.strip() or "Unknown",
-        "date": date.strip() or "Unknown",
-        "currency": currency.strip() or "$",
-        "items": items,
-        "total": round(total, 2),
-        "category_totals": category_totals,
-        "savings_tip": "",
-        "tip_language": "",
-    }
 
 
 def render_receipt_editor(index: int, entry: dict, categories: list[str]) -> None:
