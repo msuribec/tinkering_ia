@@ -2,12 +2,14 @@ import streamlit as st
 import google.generativeai as genai
 import pandas as pd
 from gtts import gTTS
+import calendar
 import json
 import re
 from PIL import Image
 import io
 from typing import Optional
 import plotly.express as px
+import plotly.graph_objects as go
 
 default_categories = [
     "Food & Groceries",
@@ -67,6 +69,8 @@ def _init_state() -> None:
         "editing_receipt_index": None,
         "history_category_suggestions": [],
         "history_purchase_tips": [],
+        "category_budgets": {},
+        "selected_budget_month": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -90,6 +94,14 @@ def restart_streamlit_app() -> None:
 def clear_history_suggestions() -> None:
     st.session_state["history_category_suggestions"] = []
     st.session_state["history_purchase_tips"] = []
+
+
+def sync_category_budgets(categories: list[str]) -> None:
+    current_budgets = st.session_state.get("category_budgets", {})
+    st.session_state["category_budgets"] = {
+        category: round(float(current_budgets.get(category, 0.0) or 0.0), 2)
+        for category in categories
+    }
 
 
 def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
@@ -185,6 +197,258 @@ def build_history_summary(history: list[dict]) -> dict:
         "top_stores": top_stores,
         "category_totals": category_totals,
     }
+
+
+def parse_receipt_date(date_value: str) -> Optional[pd.Timestamp]:
+    if date_value is None:
+        return None
+
+    text = str(date_value).strip()
+    if not text or text.lower() in {"unknown", "none", "null", "nan", "nat"}:
+        return None
+
+    attempts = [
+        {"format": "mixed", "dayfirst": False},
+        {"format": "mixed", "dayfirst": True},
+        {"dayfirst": False},
+        {"dayfirst": True},
+    ]
+    for kwargs in attempts:
+        try:
+            parsed = pd.to_datetime(text, errors="coerce", **kwargs)
+        except (TypeError, ValueError):
+            continue
+        if pd.notna(parsed):
+            return pd.Timestamp(parsed).normalize()
+    return None
+
+
+def build_budget_source_data(history: list[dict]) -> dict:
+    item_rows = []
+    receipt_rows = []
+    skipped_receipts = 0
+
+    for index, entry in enumerate(history, start=1):
+        data = entry.get("data", {})
+        parsed_date = parse_receipt_date(data.get("date", ""))
+        if parsed_date is None:
+            skipped_receipts += 1
+            continue
+
+        receipt_rows.append(
+            {
+                "receipt_index": index,
+                "parsed_date": parsed_date,
+                "vendor": data.get("vendor", "Unknown"),
+                "currency": data.get("currency", "$"),
+                "total": float(data.get("total", 0) or 0),
+            }
+        )
+
+        for item in data.get("items", []):
+            item_rows.append(
+                {
+                    "receipt_index": index,
+                    "parsed_date": parsed_date,
+                    "vendor": data.get("vendor", "Unknown"),
+                    "currency": data.get("currency", "$"),
+                    "item": item.get("name", ""),
+                    "category": item.get("category", "Other"),
+                    "price": float(item.get("price", 0) or 0),
+                }
+            )
+
+    items_df = pd.DataFrame(
+        item_rows,
+        columns=[
+            "receipt_index",
+            "parsed_date",
+            "vendor",
+            "currency",
+            "item",
+            "category",
+            "price",
+        ],
+    )
+    receipts_df = pd.DataFrame(
+        receipt_rows,
+        columns=["receipt_index", "parsed_date", "vendor", "currency", "total"],
+    )
+    return {
+        "items_df": items_df,
+        "receipts_df": receipts_df,
+        "skipped_receipts": skipped_receipts,
+    }
+
+
+def get_default_budget_month(receipts_df: pd.DataFrame) -> str:
+    if not receipts_df.empty:
+        latest_date = receipts_df["parsed_date"].max()
+        return latest_date.strftime("%Y-%m")
+    return pd.Timestamp.today().strftime("%Y-%m")
+
+
+def ensure_selected_budget_month(receipts_df: pd.DataFrame) -> None:
+    selected_budget_month = st.session_state.get("selected_budget_month", "")
+    if re.fullmatch(r"\d{4}-\d{2}", selected_budget_month or ""):
+        return
+    st.session_state["selected_budget_month"] = get_default_budget_month(receipts_df)
+
+
+def build_month_budget_analytics(
+    budget_source: dict,
+    category_budgets: dict[str, float],
+    selected_month_id: str,
+) -> dict:
+    receipts_df = budget_source["receipts_df"]
+    items_df = budget_source["items_df"]
+    month_period = pd.Period(selected_month_id, freq="M")
+
+    budget_series = pd.Series(category_budgets, dtype="float64")
+    if budget_series.empty:
+        budget_series = pd.Series(dtype="float64")
+
+    if not receipts_df.empty:
+        month_receipts_df = receipts_df[
+            receipts_df["parsed_date"].dt.to_period("M") == month_period
+        ].copy()
+    else:
+        month_receipts_df = receipts_df.copy()
+
+    if not items_df.empty:
+        month_items_df = items_df[
+            items_df["parsed_date"].dt.to_period("M") == month_period
+        ].copy()
+    else:
+        month_items_df = items_df.copy()
+
+    actual_series = (
+        month_items_df.groupby("category")["price"].sum()
+        if not month_items_df.empty
+        else pd.Series(dtype="float64")
+    )
+    all_categories = list(dict.fromkeys(budget_series.index.tolist() + actual_series.index.tolist()))
+    budget_series = budget_series.reindex(all_categories, fill_value=0.0)
+    actual_series = actual_series.reindex(all_categories, fill_value=0.0)
+
+    category_df = pd.DataFrame(
+        {
+            "Category": budget_series.index.tolist(),
+            "Budget": budget_series.values,
+            "Actual": actual_series.values,
+        }
+    )
+    if category_df.empty:
+        category_df = pd.DataFrame(columns=["Category", "Budget", "Actual"])
+    category_df["Variance"] = category_df["Actual"] - category_df["Budget"]
+    category_df["Variance Status"] = category_df["Variance"].apply(
+        lambda value: "Overspent" if value > 0 else "Within budget"
+    )
+
+    stacked_df = category_df.melt(
+        id_vars="Category",
+        value_vars=["Budget", "Actual"],
+        var_name="Scenario",
+        value_name="Amount",
+    )
+
+    daily_index = pd.date_range(
+        month_period.start_time.normalize(),
+        month_period.end_time.normalize(),
+        freq="D",
+    )
+    if not month_items_df.empty:
+        daily_actual_series = month_items_df.groupby("parsed_date")["price"].sum()
+        daily_actual_series = daily_actual_series.reindex(daily_index, fill_value=0.0)
+    else:
+        daily_actual_series = pd.Series(0.0, index=daily_index)
+
+    daily_df = pd.DataFrame(
+        {
+            "Date": daily_index,
+            "Actual Daily": daily_actual_series.values,
+        }
+    )
+    daily_df["Day"] = daily_df["Date"].dt.day
+
+    total_budget = float(category_df["Budget"].sum()) if not category_df.empty else 0.0
+    total_actual = float(category_df["Actual"].sum()) if not category_df.empty else 0.0
+    days_in_month = len(daily_df) if not daily_df.empty else month_period.days_in_month
+    daily_df["Ideal Cumulative"] = (
+        total_budget * daily_df["Day"] / max(days_in_month, 1)
+        if not daily_df.empty
+        else 0.0
+    )
+    daily_df["Actual Cumulative"] = daily_df["Actual Daily"].cumsum()
+
+    currency = "$"
+    if not month_items_df.empty:
+        currency = str(month_items_df["currency"].dropna().iloc[-1])
+    elif not month_receipts_df.empty:
+        currency = str(month_receipts_df["currency"].dropna().iloc[-1])
+
+    return {
+        "month_period": month_period,
+        "month_receipts_df": month_receipts_df,
+        "month_items_df": month_items_df,
+        "category_df": category_df,
+        "stacked_df": stacked_df,
+        "daily_df": daily_df,
+        "total_budget": round(total_budget, 2),
+        "total_actual": round(total_actual, 2),
+        "currency": currency,
+    }
+
+
+def build_budget_heatmap_figure(
+    month_period: pd.Period,
+    daily_df: pd.DataFrame,
+    currency: str,
+) -> go.Figure:
+    spend_by_day = {
+        int(row["Day"]): float(row["Actual Daily"])
+        for _, row in daily_df.iterrows()
+    }
+    month_matrix = calendar.Calendar(firstweekday=0).monthdayscalendar(
+        month_period.year,
+        month_period.month,
+    )
+
+    z_values = []
+    text_values = []
+    for week in month_matrix:
+        week_values = []
+        week_text = []
+        for day in week:
+            if day == 0:
+                week_values.append(None)
+                week_text.append("")
+            else:
+                amount = spend_by_day.get(day, 0.0)
+                week_values.append(amount)
+                week_text.append(f"Day {day}<br>{currency} {amount:.2f}")
+        z_values.append(week_values)
+        text_values.append(week_text)
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z_values,
+            x=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            y=[f"Week {index + 1}" for index in range(len(month_matrix))],
+            text=text_values,
+            hovertemplate="%{text}<extra></extra>",
+            colorscale="YlGnBu",
+            colorbar={"title": f"Spend ({currency})"},
+            zmin=0,
+        )
+    )
+    fig.update_layout(
+        margin=dict(t=30, b=10),
+        xaxis_title="Day of week",
+        yaxis_title="Week of month",
+    )
+    fig.update_yaxes(autorange="reversed")
+    return fig
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -727,10 +991,13 @@ if not (api_key and categories_valid and st.session_state.categories_approved):
 
 genai.configure(api_key=api_key)
 categories = st.session_state.approved_categories
+sync_category_budgets(categories)
 
 # ── Main tabs ─────────────────────────────────────────────────────────────────
 st.divider()
-tab_chat, tab_dash, tab_suggestions = st.tabs(["📨 Receipts", "📊 Dashboard", "💡 Suggestions"])
+tab_chat, tab_dash, tab_suggestions, tab_budget = st.tabs(
+    ["📨 Receipts", "📊 Dashboard", "💡 Suggestions", "💸 Budget"]
+)
 
 # ── Tab 1: Chat interface ─────────────────────────────────────────────────────
 with tab_chat:
@@ -940,3 +1207,238 @@ with tab_suggestions:
                     st.audio(tip_entry["audio_bytes"], format="audio/mp3")
         else:
             st.caption("No history tips generated yet.")
+
+# ── Tab 4: Budget ─────────────────────────────────────────────────────────────
+with tab_budget:
+    history = st.session_state.receipt_history
+    budget_source = build_budget_source_data(history)
+    receipts_df = budget_source["receipts_df"]
+    ensure_selected_budget_month(receipts_df)
+
+    st.subheader("Monthly budget vs actual")
+    st.caption("Set one shared monthly budget per category and compare it against any month of receipt history.")
+
+    selected_budget_month = st.session_state["selected_budget_month"]
+    selected_year = int(selected_budget_month[:4])
+    selected_month_number = int(selected_budget_month[5:7])
+
+    parseable_years = (
+        {int(value.year) for value in receipts_df["parsed_date"]}
+        if not receipts_df.empty
+        else set()
+    )
+    year_options = sorted(
+        parseable_years | {pd.Timestamp.today().year, selected_year},
+        reverse=True,
+    )
+
+    picker_col, month_col = st.columns(2)
+    selected_year = picker_col.selectbox(
+        "Year",
+        options=year_options,
+        index=year_options.index(selected_year),
+        key="budget_year_picker",
+    )
+    selected_month_number = month_col.selectbox(
+        "Month",
+        options=list(range(1, 13)),
+        index=selected_month_number - 1,
+        format_func=lambda month: calendar.month_name[month],
+        key="budget_month_picker",
+    )
+    selected_budget_month = f"{selected_year}-{selected_month_number:02d}"
+    st.session_state["selected_budget_month"] = selected_budget_month
+
+    st.markdown("#### Shared monthly budget by category")
+    st.caption("These amounts are reused for every month you select in this tab.")
+
+    category_budgets = st.session_state["category_budgets"]
+    with st.form("budget_amounts_form"):
+        budget_inputs: dict[str, float] = {}
+        columns = st.columns(2)
+        for index, category in enumerate(categories):
+            budget_inputs[category] = columns[index % 2].number_input(
+                category,
+                min_value=0.0,
+                value=float(category_budgets.get(category, 0.0)),
+                step=1.0,
+                format="%.2f",
+                key=f"budget_input_{category}",
+            )
+        budget_saved = st.form_submit_button(
+            "Save budget amounts",
+            type="primary",
+            use_container_width=True,
+        )
+
+    if budget_saved:
+        category_budgets = {
+            category: round(float(amount), 2)
+            for category, amount in budget_inputs.items()
+        }
+        st.session_state["category_budgets"] = category_budgets
+    else:
+        category_budgets = st.session_state["category_budgets"]
+
+    analytics = build_month_budget_analytics(
+        budget_source,
+        category_budgets,
+        selected_budget_month,
+    )
+    month_label = analytics["month_period"].start_time.strftime("%B %Y")
+    usage_pct = (
+        (analytics["total_actual"] / analytics["total_budget"]) * 100
+        if analytics["total_budget"] > 0
+        else 0.0
+    )
+
+    k1, k2, k3 = st.columns(3)
+    k1.metric("💼 Total budget", f"{analytics['currency']} {analytics['total_budget']:.2f}")
+    k2.metric("💸 Actual spend", f"{analytics['currency']} {analytics['total_actual']:.2f}")
+    k3.metric("📈 Budget used", f"{usage_pct:.1f}%")
+
+    if budget_source["skipped_receipts"] > 0:
+        st.warning(
+            f"{budget_source['skipped_receipts']} receipt(s) were excluded from budget charts because their dates were missing or could not be parsed."
+        )
+
+    if not history:
+        st.info("No receipts analyzed yet. Analyze some receipts in the **Receipts** tab first.")
+    elif receipts_df.empty:
+        st.info("No dated receipts are available for budget analysis yet. Upload or edit receipts with recognizable dates to unlock the charts.")
+    elif analytics["month_receipts_df"].empty:
+        st.info(f"No dated receipts are available for {month_label}. Pick another month or add receipts with dates in that month.")
+    else:
+        category_df = analytics["category_df"].copy()
+        budget_vs_actual_df = category_df.melt(
+            id_vars="Category",
+            value_vars=["Budget", "Actual"],
+            var_name="Type",
+            value_name="Amount",
+        )
+
+        st.divider()
+        st.subheader(f"Budget analysis for {month_label}")
+
+        fig_budget_vs_actual = px.bar(
+            budget_vs_actual_df,
+            x="Category",
+            y="Amount",
+            color="Type",
+            barmode="group",
+            labels={"Amount": f"Amount ({analytics['currency']})"},
+            color_discrete_map={"Budget": "#94a3b8", "Actual": "#16a34a"},
+        )
+        fig_budget_vs_actual.update_layout(margin=dict(t=20, b=60))
+        fig_budget_vs_actual.update_xaxes(tickangle=-25)
+        st.plotly_chart(fig_budget_vs_actual, use_container_width=True)
+
+        st.divider()
+
+        fig_stacked = px.bar(
+            analytics["stacked_df"],
+            x="Scenario",
+            y="Amount",
+            color="Category",
+            labels={"Amount": f"Amount ({analytics['currency']})"},
+            color_discrete_sequence=px.colors.qualitative.Safe,
+            barmode="stack",
+        )
+        fig_stacked.update_layout(margin=dict(t=20, b=20))
+        st.plotly_chart(fig_stacked, use_container_width=True)
+
+        st.divider()
+
+        line_df = analytics["daily_df"].melt(
+            id_vars=["Date"],
+            value_vars=["Ideal Cumulative", "Actual Cumulative"],
+            var_name="Series",
+            value_name="Amount",
+        )
+        fig_line = px.line(
+            line_df,
+            x="Date",
+            y="Amount",
+            color="Series",
+            labels={"Amount": f"Amount ({analytics['currency']})"},
+            color_discrete_map={
+                "Ideal Cumulative": "#94a3b8",
+                "Actual Cumulative": "#2563eb",
+            },
+        )
+        fig_line.update_layout(margin=dict(t=20, b=20))
+        st.plotly_chart(fig_line, use_container_width=True)
+
+        st.divider()
+
+        pie_df = category_df[category_df["Actual"] > 0][["Category", "Actual"]]
+        if not pie_df.empty:
+            fig_pie = px.pie(
+                pie_df,
+                names="Category",
+                values="Actual",
+                color_discrete_sequence=px.colors.qualitative.Safe,
+                hole=0.35,
+            )
+            fig_pie.update_traces(textposition="inside", textinfo="percent+label")
+            fig_pie.update_layout(margin=dict(t=20, b=20))
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info("No actual spending was recorded in this month, so the spending breakdown pie chart is empty.")
+
+        st.divider()
+
+        fig_variance = px.bar(
+            category_df,
+            x="Category",
+            y="Variance",
+            color="Variance Status",
+            labels={"Variance": f"Variance ({analytics['currency']})"},
+            color_discrete_map={
+                "Overspent": "#dc2626",
+                "Within budget": "#16a34a",
+            },
+        )
+        fig_variance.add_hline(y=0, line_dash="dash", line_color="#475569")
+        fig_variance.update_layout(margin=dict(t=20, b=60), showlegend=False)
+        fig_variance.update_xaxes(tickangle=-25)
+        st.plotly_chart(fig_variance, use_container_width=True)
+
+        st.divider()
+
+        gauge_max = max(100.0, usage_pct + 10.0) if analytics["total_budget"] > 0 else 100.0
+        gauge_title = "Total spending vs budget"
+        if analytics["total_budget"] == 0:
+            gauge_title = "Set a budget to track total usage"
+        fig_gauge = go.Figure(
+            go.Indicator(
+                mode="gauge+number",
+                value=usage_pct if analytics["total_budget"] > 0 else 0.0,
+                number={"suffix": "%"},
+                title={"text": gauge_title},
+                gauge={
+                    "axis": {"range": [0, gauge_max]},
+                    "bar": {"color": "#2563eb"},
+                    "steps": [
+                        {"range": [0, min(100.0, gauge_max)], "color": "#dbeafe"},
+                        {"range": [100.0, gauge_max], "color": "#fee2e2"},
+                    ],
+                    "threshold": {
+                        "line": {"color": "#dc2626", "width": 4},
+                        "thickness": 0.75,
+                        "value": 100.0,
+                    },
+                },
+            )
+        )
+        fig_gauge.update_layout(margin=dict(t=40, b=20))
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+        st.divider()
+
+        fig_heatmap = build_budget_heatmap_figure(
+            analytics["month_period"],
+            analytics["daily_df"],
+            analytics["currency"],
+        )
+        st.plotly_chart(fig_heatmap, use_container_width=True)
