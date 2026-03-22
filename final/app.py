@@ -61,12 +61,6 @@ with st.sidebar:
         type=["csv", "txt"],
     )
 
-if not api_key:
-    st.warning("👈 Enter your free Gemini API key in the sidebar to begin.")
-    st.stop()
-
-genai.configure(api_key=api_key)
-
 # ── Helper: parse categories file ────────────────────────────────────────────
 
 def parse_categories(file) -> list[str]:
@@ -166,30 +160,93 @@ Schema:
     return json.loads(raw)
 
 
-# ── Step 1: receipt image ─────────────────────────────────────────────────────
-st.header("Step 1 — Upload your receipt 📷")
+# ── Main flow: categories approval gate ───────────────────────────────────────
+st.markdown(
+    """
+    <style>
+    div[data-testid="stButton"] button[kind="primary"] {
+        background-color: #16a34a;
+        border-color: #16a34a;
+        color: white;
+    }
+    div[data-testid="stButton"] button[kind="primary"]:hover {
+        background-color: #15803d;
+        border-color: #15803d;
+        color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+if "categories_approved" not in st.session_state:
+    st.session_state.categories_approved = False
+if "categories_signature" not in st.session_state:
+    st.session_state.categories_signature = ""
+if "approved_categories" not in st.session_state:
+    st.session_state.approved_categories = []
+
+st.header("Step 1 — Review and approve categories ✅")
+categories: list[str] = []
+categories_valid = False
+
+if categories_file:
+    try:
+        categories = parse_categories(categories_file)
+    except Exception as exc:
+        st.error(f"Could not read categories file: {exc}")
+        categories = []
+
+    if categories:
+        current_signature = f"{categories_file.name}:{categories_file.size}"
+        if st.session_state.categories_signature != current_signature:
+            st.session_state.categories_signature = current_signature
+            st.session_state.categories_approved = False
+            st.session_state.approved_categories = []
+
+        st.markdown(f"**{len(categories)} categories loaded:**")
+        for c in categories:
+            st.markdown(f"- {c}")
+
+        categories_valid = True
+        if not st.session_state.categories_approved:
+            if st.button("✅ Approve Categories", type="primary", use_container_width=True):
+                st.session_state.categories_approved = True
+                st.session_state.approved_categories = categories
+                st.rerun()
+            st.info("Please approve these categories to continue.")
+        else:
+            st.session_state.approved_categories = categories
+            st.success("Categories approved. Continue with receipt upload below.")
+    else:
+        st.error("No categories found in the uploaded file. Check the format and try again.")
+else:
+    st.info("👈 Upload your categories file from the sidebar to continue.")
+
+if not api_key:
+    st.warning("👈 Enter your Gemini API key in the sidebar.")
+
+if not (api_key and categories_valid and st.session_state.categories_approved):
+    st.stop()
+
+genai.configure(api_key=api_key)
+
+# ── Step 2: receipt image ─────────────────────────────────────────────────────
+st.divider()
+st.header("Step 2 — Upload your receipt 📷")
 receipt_file = st.file_uploader(
     "Photo of your receipt or invoice (JPG / PNG / WEBP)",
     type=["jpg", "jpeg", "png", "webp"],
 )
 
-# ── Step 2: categories file ───────────────────────────────────────────────────
-# (Moved to sidebar)
+if receipt_file:
+    categories = st.session_state.approved_categories
 
-# ── Main flow ─────────────────────────────────────────────────────────────────
-if receipt_file and categories_file:
-    categories = parse_categories(categories_file)
-
-    if not categories:
-        st.error("No categories found in the uploaded file. Check the format and try again.")
-        st.stop()
-
-    # Preview
     col_img, col_cats = st.columns([1, 1])
     with col_img:
         st.image(receipt_file, caption="Your receipt", use_container_width=True)
     with col_cats:
-        st.markdown(f"**{len(categories)} categories loaded:**")
+        st.markdown(f"**Approved categories ({len(categories)}):**")
         for c in categories:
             st.markdown(f"- {c}")
 
@@ -273,10 +330,5 @@ if receipt_file and categories_file:
 
             st.audio(audio_buf, format="audio/mp3")
             st.caption("🔊 Listen to your personalised savings tip")
-
-elif receipt_file and not categories_file:
-    st.info("👆 Please also upload your categories file (Step 2).")
-elif categories_file and not receipt_file:
-    st.info("👆 Please also upload a receipt image (Step 1).")
 else:
-    st.info("👆 Upload a receipt photo and a categories file above to get started.")
+    st.info("👆 Upload a receipt image to analyze it.")
