@@ -50,7 +50,7 @@ def receipt_to_text(receipt: dict) -> str:
 def embed_text(text: str, task_type: str = "retrieval_document") -> list[float]:
     """Embed text using Gemini text-embedding-004. Returns a 768-dim float list."""
     result = genai.embed_content(
-        model="models/text-embedding-004",
+        model="models/gemini-embedding-2-preview",
         content=text,
         task_type=task_type,
     )
