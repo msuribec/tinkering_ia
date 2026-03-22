@@ -64,6 +64,12 @@ with st.sidebar:
     else:
         st.caption("Enter your API key to unlock category upload.")
 
+    st.markdown("---")
+    if st.button("End session", use_container_width=True):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
+
 # ── Helper: parse categories file ────────────────────────────────────────────
 
 def parse_categories(file) -> list[str]:
