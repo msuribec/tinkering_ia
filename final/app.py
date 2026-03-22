@@ -45,18 +45,6 @@ with st.sidebar:
     if api_key:
         st.markdown("---")
         st.header("Step 1 - Load your categories file 📂")
-        st.caption("`.txt` with one category per line, or `.csv` with a `category` column.")
-
-        example_txt = (
-            "Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
-            "Household\nClothing\nUtilities\nOther"
-        )
-        st.download_button(
-            "📥 Download example categories.txt",
-            data=example_txt,
-            file_name="categories_example.txt",
-            mime="text/plain",
-        )
 
         categories_file = st.file_uploader(
             "Your categories file (TXT or CSV)",
@@ -184,8 +172,20 @@ st.markdown(
 )
 
 if not api_key:
-    st.info("Step 1 - Enter your Gemini API key in the sidebar.")
-    st.stop()
+    st.header("Step 1 — Enter your Gemini API key in the sidebar 🔑")
+    st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
+    st.info("If you don't have a custom categories file, you can download the sample one in the button below")
+    example_txt = (
+        "Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
+        "Household\nClothing\nUtilities\nOther"
+    )
+    st.download_button(
+         "📥 Download example categories.txt",
+        data=example_txt,
+        file_name="categories_example.txt",
+        mime="text/plain",
+    )
+
 
 if "categories_approved" not in st.session_state:
     st.session_state.categories_approved = False
