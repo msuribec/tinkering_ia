@@ -215,7 +215,7 @@ if api_key and categories_file:
             st.success("Categories approved. Continue with receipt upload below.")
     else:
         st.error("No categories found in the uploaded file. Check the format and try again.")
-else:
+elif api_key and not categories_file:
     st.header("Step 2 - Upload your categories file in the sidebar.")
     st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
     st.info("If you don't have a custom categories file, you can download the sample one in the button below")
