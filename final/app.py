@@ -37,7 +37,7 @@ st.set_page_config(
 
 st.title("💰 My-Expense Auditor")
 st.markdown(
-    "*Upload a receipt and your expense categories — get an instant breakdown and a savings tip by voice.*"
+    "*Upload a receipt and your expense categories — extract expenses, edit them, and generate a savings tip by voice.*"
 )
 
 # ── Green primary buttons ─────────────────────────────────────────────────────
@@ -255,8 +255,6 @@ TASKS:
 5. Assign each item to the closest matching category from the list above.
    Use "Other" only when no category is even remotely appropriate.
 6. Sum the amounts per category.
-7. Write ONE short, specific, actionable savings tip based on where most money was spent.
-   Write the tip in the SAME LANGUAGE as the text on the receipt.
 
 Return ONLY a valid JSON object — no markdown fences, no extra text.
 Schema:
@@ -268,11 +266,46 @@ Schema:
     {{"name": "string", "price": 0.00, "category": "string"}}
   ],
   "total":            0.00,
-  "category_totals": {{"Category Name": 0.00}},
-  "savings_tip":     "string",
-  "tip_language":    "ISO 639-1 code, e.g. es or en"
+  "category_totals": {{"Category Name": 0.00}}
 }}"""
     response = model.generate_content([prompt, pil_image])
+    raw = response.text.strip()
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+    return json.loads(raw)
+
+
+def generate_savings_tip(receipt_data: dict) -> dict:
+    chosen_model = pick_supported_model() or "models/gemini-2.0-flash"
+    model = genai.GenerativeModel(chosen_model)
+    receipt_payload = json.dumps(
+        {
+            "vendor": receipt_data.get("vendor", "Unknown"),
+            "date": receipt_data.get("date", "Unknown"),
+            "currency": receipt_data.get("currency", "$"),
+            "items": receipt_data.get("items", []),
+            "total": receipt_data.get("total", 0),
+            "category_totals": receipt_data.get("category_totals", {}),
+        },
+        ensure_ascii=False,
+    )
+    prompt = f"""You are a personal finance auditor. Use the receipt data below to write a concise savings tip.
+
+RECEIPT DATA:
+{receipt_payload}
+
+TASKS:
+1. Review the spending pattern in this receipt.
+2. Write ONE short, specific, actionable savings tip based on where most money was spent.
+3. Write the tip in the same language as the receipt data when it is reasonably clear. If the language is unclear, write it in Spanish.
+
+Return ONLY a valid JSON object — no markdown fences, no extra text.
+Schema:
+{{
+  "savings_tip": "string",
+  "tip_language": "ISO 639-1 code, e.g. es or en"
+}}"""
+    response = model.generate_content(prompt)
     raw = response.text.strip()
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
@@ -455,21 +488,51 @@ def render_receipt_result(index: int, entry: dict, categories: list[str]) -> Non
         st.plotly_chart(fig, use_container_width=True)
 
     tip = data.get("savings_tip", "")
+    actions_col, tip_action_col = st.columns(2)
+    is_editing = st.session_state.editing_receipt_index == index
+    button_label = "Close editor" if is_editing else "Edit receipt"
+    if actions_col.button(button_label, key=f"edit_receipt_button_{index}", use_container_width=True):
+        st.session_state.editing_receipt_index = None if is_editing else index
+        st.rerun()
+
+    if not tip:
+        if tip_action_col.button(
+            "Generate tip based on receipt",
+            key=f"generate_tip_button_{index}",
+            use_container_width=True,
+        ):
+            with st.spinner("Generating savings tip..."):
+                try:
+                    tip_data = generate_savings_tip(data)
+                    tip_text = tip_data.get("savings_tip", "").strip()
+                    tip_language = tip_data.get("tip_language", "es").strip() or "es"
+                    if not tip_text:
+                        st.error("The model did not return a savings tip. Please try again.")
+                        return
+                    audio_bytes, detected_lang = generate_audio(tip_text, tip_language)
+                except json.JSONDecodeError:
+                    st.error("The model returned an unexpected tip response. Please try again.")
+                    return
+                except Exception as exc:
+                    st.error(f"Error: {exc}")
+                    return
+
+            st.session_state.receipt_history[index]["data"]["savings_tip"] = tip_text
+            st.session_state.receipt_history[index]["data"]["tip_language"] = detected_lang
+            st.session_state.receipt_history[index]["audio_bytes"] = audio_bytes
+            st.rerun()
+    else:
+        tip_action_col.empty()
+
+    if is_editing:
+        render_receipt_editor(index, entry, categories)
+
     if tip:
         st.markdown("**💡 Savings Tip**")
         st.info(f"🎯 {tip}")
         if entry.get("audio_bytes"):
             st.audio(entry["audio_bytes"], format="audio/mp3")
             st.caption("🔊 Listen to your personalised savings tip")
-
-    is_editing = st.session_state.editing_receipt_index == index
-    button_label = "Close editor" if is_editing else "Edit receipt"
-    if st.button(button_label, key=f"edit_receipt_button_{index}", use_container_width=True):
-        st.session_state.editing_receipt_index = None if is_editing else index
-        st.rerun()
-
-    if is_editing:
-        render_receipt_editor(index, entry, categories)
 
 
 # ── Categories gate ───────────────────────────────────────────────────────────
@@ -562,8 +625,8 @@ with tab_chat:
 
     if receipt_file:
         st.image(receipt_file, caption="Preview", width=260)
-        if st.button("🔍 Analyze Receipt", type="primary", use_container_width=True):
-            with st.spinner("Reading receipt with Gemini Vision…"):
+        if st.button("🔍 Extract data from receipt", type="primary", use_container_width=True):
+            with st.spinner("Extracting receipt data with Gemini Vision..."):
                 try:
                     data = analyze_receipt(receipt_file.getvalue(), categories)
                 except json.JSONDecodeError:
@@ -573,17 +636,14 @@ with tab_chat:
                     st.error(f"Error: {exc}")
                     st.stop()
 
-            tip = data.get("savings_tip", "")
-            audio_bytes: bytes | None = None
-            if tip:
-                with st.spinner("Generating audio tip…"):
-                    audio_bytes, _ = generate_audio(tip, data.get("tip_language", "es"))
+            data["savings_tip"] = ""
+            data["tip_language"] = ""
 
             st.session_state.receipt_history.append(
                 {
                     "image_bytes": receipt_file.getvalue(),
                     "data": data,
-                    "audio_bytes": audio_bytes,
+                    "audio_bytes": None,
                 }
             )
             st.rerun()
