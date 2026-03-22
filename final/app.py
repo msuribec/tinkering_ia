@@ -11,6 +11,17 @@ from typing import Optional
 import plotly.express as px
 import plotly.graph_objects as go
 
+SPENDING_EXPORT_COLUMNS = [
+    "receipt_index",
+    "vendor",
+    "date",
+    "currency",
+    "item",
+    "price",
+    "category",
+    "receipt_total",
+]
+
 default_categories = [
     "Food & Groceries",
     "Transport",
@@ -137,18 +148,83 @@ def build_spending_export_csv(history: list[dict]) -> bytes:
 
     df = pd.DataFrame(
         rows,
-        columns=[
-            "receipt_index",
-            "vendor",
-            "date",
-            "currency",
-            "item",
-            "price",
-            "category",
-            "receipt_total",
-        ],
+        columns=SPENDING_EXPORT_COLUMNS,
     )
     return dataframe_to_csv_bytes(df)
+
+
+def parse_uploaded_spending_history(file) -> list[dict]:
+    content = file.read().decode("utf-8")
+    file.seek(0)
+
+    try:
+        df = pd.read_csv(io.StringIO(content))
+    except Exception as exc:
+        raise ValueError(f"Could not read CSV: {exc}") from exc
+
+    missing_columns = [column for column in SPENDING_EXPORT_COLUMNS if column not in df.columns]
+    if missing_columns:
+        raise ValueError(
+            "Missing required columns: " + ", ".join(missing_columns)
+        )
+
+    df = df[SPENDING_EXPORT_COLUMNS].copy()
+    for column in ["vendor", "date", "currency", "item", "category"]:
+        df[column] = df[column].fillna("").astype(str).str.strip()
+
+    df["vendor"] = df["vendor"].replace("", "Unknown")
+    df["date"] = df["date"].replace("", "Unknown")
+    df["currency"] = df["currency"].replace("", "$")
+
+    df["price"] = pd.to_numeric(df["price"], errors="coerce")
+    df["receipt_total"] = pd.to_numeric(df["receipt_total"], errors="coerce")
+
+    invalid_price_rows = df.index[df["price"].isna()].tolist()
+    if invalid_price_rows:
+        rows_text = ", ".join(str(row + 2) for row in invalid_price_rows)
+        raise ValueError(f"Invalid price values found in CSV rows: {rows_text}")
+
+    blank_item_rows = df.index[df["item"] == ""].tolist()
+    if blank_item_rows:
+        rows_text = ", ".join(str(row + 2) for row in blank_item_rows)
+        raise ValueError(f"Blank item values found in CSV rows: {rows_text}")
+
+    blank_category_rows = df.index[df["category"] == ""].tolist()
+    if blank_category_rows:
+        rows_text = ", ".join(str(row + 2) for row in blank_category_rows)
+        raise ValueError(f"Blank category values found in CSV rows: {rows_text}")
+
+    imported_entries = []
+    for _, receipt_df in df.groupby("receipt_index", sort=False):
+        first_row = receipt_df.iloc[0]
+        items = [
+            {
+                "name": row["item"],
+                "price": round(float(row["price"]), 2),
+                "category": row["category"],
+            }
+            for _, row in receipt_df.iterrows()
+        ]
+        data = rebuild_receipt_data(
+            {},
+            str(first_row["vendor"]),
+            str(first_row["date"]),
+            str(first_row["currency"]),
+            items,
+        )
+        imported_entries.append(
+            {
+                "image_bytes": None,
+                "source": "imported_csv",
+                "data": data,
+                "audio_bytes": None,
+            }
+        )
+
+    if not imported_entries:
+        raise ValueError("The uploaded CSV does not contain any receipt rows.")
+
+    return imported_entries
 
 
 def build_history_summary(history: list[dict]) -> dict:
@@ -511,6 +587,31 @@ with st.sidebar:
         st.caption("Analyze at least one receipt to export spending data.")
 
     st.markdown("---")
+    st.header("Upload receipt history")
+    receipt_history_file = st.file_uploader(
+        "Import a spending history CSV",
+        type=["csv"],
+        key=f"receipt_history_file_{widget_seed}",
+        disabled=not st.session_state.categories_approved,
+    )
+    import_history_clicked = st.button(
+        "Import receipt history",
+        use_container_width=True,
+        disabled=not (st.session_state.categories_approved and receipt_history_file),
+    )
+    if not st.session_state.categories_approved:
+        st.caption("Approve categories to enable receipt history import.")
+    elif import_history_clicked and receipt_history_file is not None:
+        try:
+            imported_entries = parse_uploaded_spending_history(receipt_history_file)
+        except ValueError as exc:
+            st.error(str(exc))
+        else:
+            st.session_state.receipt_history.extend(imported_entries)
+            clear_history_suggestions()
+            st.success(f"Imported {len(imported_entries)} receipt(s) from CSV.")
+
+    st.markdown("---")
     if st.button("End session", use_container_width=True):
         restart_streamlit_app()
 
@@ -785,6 +886,9 @@ def rebuild_receipt_data(
 
 def render_receipt_editor(index: int, entry: dict, categories: list[str]) -> None:
     data = entry["data"]
+    editable_categories = list(
+        dict.fromkeys(categories + [str(item.get("category", "")).strip() for item in data.get("items", []) if str(item.get("category", "")).strip()])
+    )
     items_df = pd.DataFrame(data.get("items", []), columns=["name", "price", "category"])
 
     with st.expander("Edit receipt details", expanded=True):
@@ -806,7 +910,7 @@ def render_receipt_editor(index: int, entry: dict, categories: list[str]) -> Non
                         step=0.01,
                         format="%.2f",
                     ),
-                    "category": st.column_config.SelectboxColumn("Category", options=categories),
+                    "category": st.column_config.SelectboxColumn("Category", options=editable_categories),
                 },
             )
 
@@ -826,7 +930,7 @@ def render_receipt_editor(index: int, entry: dict, categories: list[str]) -> Non
             st.rerun()
 
         if save_clicked:
-            cleaned_items, errors = normalize_edited_items(edited_items_df, categories)
+            cleaned_items, errors = normalize_edited_items(edited_items_df, editable_categories)
             if errors:
                 for error in errors:
                     st.error(error)
@@ -1004,7 +1108,10 @@ with tab_chat:
     # Render history
     for index, entry in enumerate(st.session_state.receipt_history):
         with st.chat_message("user"):
-            st.image(entry["image_bytes"], width=260)
+            if entry.get("image_bytes"):
+                st.image(entry["image_bytes"], width=260)
+            else:
+                st.info("Imported from CSV")
         with st.chat_message("assistant"):
             render_receipt_result(index, entry, categories)
 
