@@ -10,6 +10,7 @@ import io
 from typing import Optional
 import plotly.express as px
 import plotly.graph_objects as go
+from rag import ReceiptVectorStore, answer_question
 
 SPENDING_EXPORT_COLUMNS = [
     "receipt_index",
@@ -82,6 +83,9 @@ def _init_state() -> None:
         "history_purchase_tips": [],
         "category_budgets": {},
         "selected_budget_month": "",
+        "vector_store": None,
+        "rag_chat_history": [],
+        "rag_receipt_count": 0,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1099,8 +1103,8 @@ sync_category_budgets(categories)
 
 # ── Main tabs ─────────────────────────────────────────────────────────────────
 st.divider()
-tab_chat, tab_dash, tab_suggestions, tab_budget = st.tabs(
-    ["📨 Receipts", "📊 Dashboard", "💡 Suggestions", "💸 Budget"]
+tab_chat, tab_dash, tab_suggestions, tab_budget, tab_search = st.tabs(
+    ["📨 Receipts", "📊 Dashboard", "💡 Suggestions", "💸 Budget", "🔍 Receipt Search"]
 )
 
 # ── Tab 1: Chat interface ─────────────────────────────────────────────────────
@@ -1549,3 +1553,61 @@ with tab_budget:
             analytics["currency"],
         )
         st.plotly_chart(fig_heatmap, use_container_width=True)
+
+# ── Tab 5: Receipt Search (RAG) ───────────────────────────────────────────────
+with tab_search:
+    history = st.session_state.receipt_history
+
+    if not history:
+        st.info("No receipts yet. Analyze some receipts in the **Receipts** tab first.")
+    else:
+        # Lazy build / rebuild when receipt count changes
+        if (
+            st.session_state.vector_store is None
+            or st.session_state.rag_receipt_count != len(history)
+        ):
+            with st.spinner(f"Indexing {len(history)} receipt(s)…"):
+                store = ReceiptVectorStore()
+                failed = 0
+                for receipt in history:
+                    try:
+                        store.add_receipt(receipt)
+                    except Exception:
+                        failed += 1
+            st.session_state.vector_store = store
+            st.session_state.rag_receipt_count = len(history)
+            if failed:
+                st.warning(f"{failed} receipt(s) could not be indexed and will be skipped.")
+
+        vector_store = st.session_state.vector_store
+
+        st.markdown("#### Ask about your receipts")
+
+        # Render existing chat history
+        for msg in st.session_state.rag_chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        # Chat input
+        question = st.chat_input("E.g. How much did I spend on groceries?")
+        if question:
+            with st.chat_message("user"):
+                st.markdown(question)
+            st.session_state.rag_chat_history.append({"role": "user", "content": question})
+
+            chosen_model = pick_supported_model() or "models/gemini-2.0-flash"
+            llm = genai.GenerativeModel(chosen_model)
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking…"):
+                    try:
+                        answer = answer_question(question, vector_store, llm)
+                    except Exception as exc:
+                        answer = f"Error generating answer: {exc}"
+                st.markdown(answer)
+            st.session_state.rag_chat_history.append({"role": "assistant", "content": answer})
+
+        # Clear button
+        if st.session_state.rag_chat_history:
+            if st.button("Clear chat history", use_container_width=False):
+                st.session_state.rag_chat_history = []
+                st.rerun()
