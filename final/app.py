@@ -173,18 +173,7 @@ st.markdown(
 
 if not api_key:
     st.header("Step 1 — Enter your Gemini API key in the sidebar 🔑")
-    st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
-    st.info("If you don't have a custom categories file, you can download the sample one in the button below")
-    example_txt = (
-        "Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
-        "Household\nClothing\nUtilities\nOther"
-    )
-    st.download_button(
-         "📥 Download example categories.txt",
-        data=example_txt,
-        file_name="categories_example.txt",
-        mime="text/plain",
-    )
+
 
 
 if "categories_approved" not in st.session_state:
@@ -194,7 +183,7 @@ if "categories_signature" not in st.session_state:
 if "approved_categories" not in st.session_state:
     st.session_state.approved_categories = []
 
-st.header("Step 1 — Review and approve categories ✅")
+
 categories: list[str] = []
 categories_valid = False
 
@@ -230,6 +219,18 @@ if categories_file:
         st.error("No categories found in the uploaded file. Check the format and try again.")
 else:
     st.info("Step 1 - Upload your categories file in the sidebar.")
+    st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
+    st.info("If you don't have a custom categories file, you can download the sample one in the button below")
+    example_txt = (
+        "Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
+        "Household\nClothing\nUtilities\nOther"
+    )
+    st.download_button(
+        "📥 Download example categories.txt",
+        data=example_txt,
+        file_name="categories_example.txt",
+        mime="text/plain",
+    )
 
 
 
