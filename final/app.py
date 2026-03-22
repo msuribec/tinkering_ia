@@ -209,10 +209,14 @@ if api_key and not categories_file:
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
         categories_valid = True
         categories = default_categories
-        
-elif api_key and categories_file:
-    if categories:
 
+elif api_key and categories_file:
+    try:
+        categories = parse_categories(categories_file)
+    except Exception as exc:
+        st.error(f"Could not read categories file: {exc}")
+        categories = []
+    if categories:
         current_signature = f"{categories_file.name}:{categories_file.size}"
         if st.session_state.categories_signature != current_signature:
             st.session_state.categories_signature = current_signature
@@ -234,12 +238,6 @@ elif api_key and categories_file:
             st.session_state.approved_categories = categories
             st.success("Categories approved. Continue with receipt upload below.")
 
-    else:
-        try:
-            categories = parse_categories(categories_file)
-        except Exception as exc:
-            st.error(f"Could not read categories file: {exc}")
-            categories = []
 
 
 if not (api_key and categories_valid and st.session_state.categories_approved):
