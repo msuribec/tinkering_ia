@@ -1560,8 +1560,6 @@ with tab_budget:
 with tab_search:
     history = st.session_state.receipt_history
 
-    import google.generativeai as genai
-
     # Make sure you have your API key set up as an environment variable
     # or pass it to the client constructor.
     client = genai.Client()
