@@ -65,6 +65,8 @@ def _init_state() -> None:
         "approved_categories": [],
         "receipt_history": [],  # list[dict] — one entry per analyzed receipt
         "editing_receipt_index": None,
+        "history_category_suggestions": [],
+        "history_purchase_tips": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -83,6 +85,11 @@ def restart_streamlit_app() -> None:
         del st.session_state[key]
     st.session_state["widget_seed"] = next_seed
     st.rerun()
+
+
+def clear_history_suggestions() -> None:
+    st.session_state["history_category_suggestions"] = []
+    st.session_state["history_purchase_tips"] = []
 
 
 def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
@@ -130,6 +137,54 @@ def build_spending_export_csv(history: list[dict]) -> bytes:
         ],
     )
     return dataframe_to_csv_bytes(df)
+
+
+def build_history_summary(history: list[dict]) -> dict:
+    receipts = []
+    stores = []
+    items = []
+    category_totals: dict[str, float] = {}
+
+    for index, entry in enumerate(history, start=1):
+        data = entry.get("data", {})
+        vendor = data.get("vendor", "Unknown")
+        stores.append(vendor)
+        receipt_items = data.get("items", [])
+
+        receipts.append(
+            {
+                "receipt_index": index,
+                "vendor": vendor,
+                "date": data.get("date", "Unknown"),
+                "currency": data.get("currency", "$"),
+                "total": float(data.get("total", 0) or 0),
+                "items_count": len(receipt_items),
+            }
+        )
+
+        for item in receipt_items:
+            item_name = item.get("name", "")
+            item_category = item.get("category", "")
+            item_price = float(item.get("price", 0) or 0)
+            items.append(
+                {
+                    "receipt_index": index,
+                    "vendor": vendor,
+                    "item": item_name,
+                    "category": item_category,
+                    "price": item_price,
+                }
+            )
+            category_totals[item_category] = round(category_totals.get(item_category, 0.0) + item_price, 2)
+
+    top_stores = pd.Series(stores).value_counts().head(10).to_dict() if stores else {}
+
+    return {
+        "receipts": receipts,
+        "items": items,
+        "top_stores": top_stores,
+        "category_totals": category_totals,
+    }
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -312,6 +367,70 @@ Schema:
     return json.loads(raw)
 
 
+def generate_category_suggestions(history: list[dict], categories: list[str]) -> list[dict]:
+    chosen_model = pick_supported_model() or "models/gemini-2.0-flash"
+    model = genai.GenerativeModel(chosen_model)
+    history_summary = json.dumps(build_history_summary(history), ensure_ascii=False)
+    categories_payload = json.dumps(categories, ensure_ascii=False)
+    prompt = f"""You are a personal finance auditor. Review the purchase history and the user's current categories.
+
+CURRENT CATEGORIES:
+{categories_payload}
+
+PURCHASE HISTORY SUMMARY:
+{history_summary}
+
+TASKS:
+1. Suggest up to 5 NEW categories that do not already exist in the current categories list.
+2. Base the suggestions on recurring items, stores, and spending patterns from the history.
+3. Keep each category concise and practical for a budgeting app.
+4. For each suggestion, include a short reason mentioning the relevant items or stores.
+5. If the current categories are already sufficient, return an empty list.
+
+Return ONLY a valid JSON object — no markdown fences, no extra text.
+Schema:
+{{
+  "suggested_categories": [
+    {{"category": "string", "reason": "string"}}
+  ]
+}}"""
+    response = model.generate_content(prompt)
+    raw = response.text.strip()
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+    data = json.loads(raw)
+    return data.get("suggested_categories", [])
+
+
+def generate_history_tips(history: list[dict]) -> list[str]:
+    chosen_model = pick_supported_model() or "models/gemini-2.0-flash"
+    model = genai.GenerativeModel(chosen_model)
+    history_summary = json.dumps(build_history_summary(history), ensure_ascii=False)
+    prompt = f"""You are a personal finance auditor. Review the user's full purchase history and write practical savings tips.
+
+PURCHASE HISTORY SUMMARY:
+{history_summary}
+
+TASKS:
+1. Review the overall spending patterns across all receipts.
+2. Write 3 short, specific, actionable savings tips.
+3. Base the tips on repeated stores, recurring item types, or dominant spending categories.
+4. Keep each tip to one sentence.
+5. Write the tips in the same language as the purchase history when it is reasonably clear. If unclear, write them in Spanish.
+
+Return ONLY a valid JSON object — no markdown fences, no extra text.
+Schema:
+{{
+  "tips": ["string", "string", "string"]
+}}"""
+    response = model.generate_content(prompt)
+    raw = response.text.strip()
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+    data = json.loads(raw)
+    return [tip.strip() for tip in data.get("tips", []) if isinstance(tip, str) and tip.strip()]
+
+
 def generate_audio(tip: str, lang_code: str) -> tuple[bytes, str]:
     lang = lang_code if lang_code in GTTS_SUPPORTED_LANGS else "es"
     tts = gTTS(text=tip, lang=lang, slow=False)
@@ -449,6 +568,7 @@ def render_receipt_editor(index: int, entry: dict, categories: list[str]) -> Non
             st.session_state.receipt_history[index]["data"] = updated_data
             st.session_state.receipt_history[index]["audio_bytes"] = None
             st.session_state.editing_receipt_index = None
+            clear_history_suggestions()
             st.rerun()
 
 
@@ -559,6 +679,7 @@ if api_key and not categories_file:
             st.session_state.categories_approved = True
             st.session_state.categories_signature = "__default__"
             st.session_state.approved_categories = default_categories
+            clear_history_suggestions()
             st.rerun()
         st.info("Please upload a categories file or use the default categories to continue.")
     else:
@@ -590,6 +711,7 @@ elif api_key and categories_file:
             if st.button("✅ Approve Categories", type="primary", use_container_width=True):
                 st.session_state.categories_approved = True
                 st.session_state.approved_categories = categories
+                clear_history_suggestions()
                 st.rerun()
             st.info("Please approve these categories to continue.")
         else:
@@ -604,7 +726,7 @@ categories = st.session_state.approved_categories
 
 # ── Main tabs ─────────────────────────────────────────────────────────────────
 st.divider()
-tab_chat, tab_dash = st.tabs(["📨 Receipts", "📊 Dashboard"])
+tab_chat, tab_dash, tab_suggestions = st.tabs(["📨 Receipts", "📊 Dashboard", "💡 Suggestions"])
 
 # ── Tab 1: Chat interface ─────────────────────────────────────────────────────
 with tab_chat:
@@ -646,6 +768,7 @@ with tab_chat:
                     "audio_bytes": None,
                 }
             )
+            clear_history_suggestions()
             st.rerun()
 
 # ── Tab 2: Dashboard ──────────────────────────────────────────────────────────
@@ -735,3 +858,66 @@ with tab_dash:
             fig_stack.update_layout(margin=dict(t=20, b=60))
             fig_stack.update_xaxes(tickangle=-25)
             st.plotly_chart(fig_stack, use_container_width=True)
+
+# ── Tab 3: Suggestions ────────────────────────────────────────────────────────
+with tab_suggestions:
+    history = st.session_state.receipt_history
+
+    if not history:
+        st.info("No receipts analyzed yet. Analyze some receipts in the **Receipts** tab first.")
+    else:
+        st.subheader("Suggestions from your full history")
+        st.caption("Use your complete receipt history to discover better categories and broader saving opportunities.")
+
+        suggest_col, tip_col = st.columns(2)
+
+        if suggest_col.button(
+            "Suggest new categories",
+            type="primary",
+            use_container_width=True,
+        ):
+            with st.spinner("Reviewing your history to suggest new categories..."):
+                try:
+                    st.session_state.history_category_suggestions = generate_category_suggestions(history, categories)
+                except json.JSONDecodeError:
+                    st.error("The model returned an unexpected response for category suggestions. Please try again.")
+                except Exception as exc:
+                    st.error(f"Error: {exc}")
+
+        if tip_col.button(
+            "Generate history tips",
+            type="primary",
+            use_container_width=True,
+        ):
+            with st.spinner("Reviewing your purchase history for savings tips..."):
+                try:
+                    st.session_state.history_purchase_tips = generate_history_tips(history)
+                except json.JSONDecodeError:
+                    st.error("The model returned an unexpected response for history tips. Please try again.")
+                except Exception as exc:
+                    st.error(f"Error: {exc}")
+
+        st.divider()
+
+        st.markdown("**Suggested New Categories**")
+        category_suggestions = st.session_state.history_category_suggestions
+        if category_suggestions:
+            for suggestion in category_suggestions:
+                category_name = str(suggestion.get("category", "")).strip()
+                reason = str(suggestion.get("reason", "")).strip()
+                if category_name:
+                    st.markdown(f"**{category_name}**")
+                    if reason:
+                        st.caption(reason)
+        else:
+            st.caption("No category suggestions generated yet.")
+
+        st.divider()
+
+        st.markdown("**Tips Based on All Purchase History**")
+        history_tips = st.session_state.history_purchase_tips
+        if history_tips:
+            for tip in history_tips:
+                st.info(f"🎯 {tip}")
+        else:
+            st.caption("No history tips generated yet.")
