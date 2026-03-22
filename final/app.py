@@ -23,10 +23,6 @@ with st.sidebar:
         """
         <div style="display: flex; align-items: center; gap: 0.35rem;">
             <h3 style="margin: 0;">⚙️ Configuration</h3>
-            <span
-                title="1. Go to https://aistudio.google.com&#10;2. Sign in with Google&#10;3. Click Get API Key and create one&#10;4. Paste the key in the field below"
-                style="cursor: help; font-size: 1rem;"
-            >❓</span>
         </div>
         """,
         unsafe_allow_html=True,
