@@ -1590,6 +1590,7 @@ with tab_search:
                     f"Could not index any receipts. "
                     f"Error: {first_error or 'Unknown error'}. "
                     "Check that your API key has access to the Gemini embedding model "
+                    "and that the embedding dimensionality matches the FAISS index."
                 )
                 # Reset so next render retries
                 st.session_state.vector_store = None

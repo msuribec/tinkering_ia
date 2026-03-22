@@ -6,7 +6,7 @@ import google.generativeai as genai
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 EMBEDDING_MODEL = "gemini-embedding-001"
-EMBEDDING_DIM = 768  # text embedding output size
+EMBEDDING_DIM = 768
 NUMERIC_KEYWORDS = {"total", "sum", "how much", "spent", "cost", "amount", "price"}
 
 
@@ -48,11 +48,12 @@ def receipt_to_text(receipt: dict) -> str:
 # ── Embeddings ────────────────────────────────────────────────────────────────
 
 def embed_text(text: str, task_type: str = "retrieval_document") -> list[float]:
-    """Embed. Returns a 768-dim float list."""
+    """Embed text with a fixed dimensionality that matches the FAISS index."""
     result = genai.embed_content(
         model=f"models/{EMBEDDING_MODEL}",
         content=text,
         task_type=task_type,
+        output_dimensionality=EMBEDDING_DIM,
     )
     return result["embedding"]
 
@@ -76,6 +77,10 @@ class ReceiptVectorStore:
     def add_receipt(self, receipt: dict) -> None:
         text = receipt_to_text(receipt)
         vec = np.array([embed_text(text, task_type="retrieval_document")], dtype="float32")
+        if vec.shape[1] != self.EMBEDDING_DIM:
+            raise ValueError(
+                f"Embedding dimension mismatch: expected {self.EMBEDDING_DIM}, got {vec.shape[1]}"
+            )
         faiss.normalize_L2(vec)
         self._index.add(vec)
         self._receipts.append(receipt)
@@ -86,6 +91,10 @@ class ReceiptVectorStore:
         if self._index.ntotal == 0:
             return []
         vec = np.array([embed_text(query, task_type="retrieval_query")], dtype="float32")
+        if vec.shape[1] != self.EMBEDDING_DIM:
+            raise ValueError(
+                f"Query embedding dimension mismatch: expected {self.EMBEDDING_DIM}, got {vec.shape[1]}"
+            )
         faiss.normalize_L2(vec)
         actual_k = min(k, self._index.ntotal)
         _, indices = self._index.search(vec, actual_k)
@@ -96,6 +105,10 @@ class ReceiptVectorStore:
         if self._index.ntotal == 0:
             return []
         vec = np.array([embed_text(query, task_type="retrieval_query")], dtype="float32")
+        if vec.shape[1] != self.EMBEDDING_DIM:
+            raise ValueError(
+                f"Query embedding dimension mismatch: expected {self.EMBEDDING_DIM}, got {vec.shape[1]}"
+            )
         faiss.normalize_L2(vec)
         actual_k = min(k, self._index.ntotal)
         _, indices = self._index.search(vec, actual_k)
