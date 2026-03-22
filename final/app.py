@@ -205,18 +205,25 @@ if api_key and not categories_file:
     st.info("If you don't have a custom categories file, you can download click the 'Use default' button")
     st.markdown("The default categories are:")
     st.markdown("- " + "\n- ".join(default_categories))
-    
-    
+
+    # If there is no uploaded file, only keep approval when the user explicitly
+    # approved the built-in defaults.
+    if st.session_state.categories_signature != "__default__":
+        st.session_state.categories_approved = False
+        st.session_state.approved_categories = []
 
     if not st.session_state.categories_approved:
         if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
             categories_valid = True
             categories = default_categories
             st.session_state.categories_approved = True
+            st.session_state.categories_signature = "__default__"
             st.session_state.approved_categories = categories
             st.rerun()
-        st.info("Please approve these categories to continue.")
+        st.info("Please Upload a categories file or use default categories to continue.")
     else:
+        categories = default_categories
+        categories_valid = True
         st.session_state.approved_categories = categories
         st.success("Categories approved. Continue with receipt upload below.")
 
