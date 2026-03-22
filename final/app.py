@@ -226,7 +226,7 @@ use_default_categories = False
 if api_key and not categories_file:
     st.header("Step 2 - Upload your categories file in the sidebar.")
     st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
-    st.info("If you don't have a custom categories file, you can download click the 'Use default' button")
+    st.info("If you don't have a custom categories file, you can click on the 'Use default' button")
     st.markdown("The default categories are:")
     st.markdown("- " + "\n- ".join(default_categories))
 
@@ -249,7 +249,7 @@ if api_key and not categories_file:
         categories = default_categories
         categories_valid = True
         st.session_state.approved_categories = categories
-        st.success("Categories approved. Continue with receipt upload below.")
+        st.success("Using default categories. Continue with receipt upload below.")
 
 elif api_key and categories_file:
     try:
