@@ -1568,16 +1568,30 @@ with tab_search:
         ):
             with st.spinner(f"Indexing {len(history)} receipt(s)…"):
                 store = ReceiptVectorStore()
-                failed = 0
+                first_error: str | None = None
                 for receipt in history:
                     try:
                         store.add_receipt(receipt)
-                    except Exception:
-                        failed += 1
+                    except Exception as e:
+                        if first_error is None:
+                            first_error = str(e)
+
+            if store.ntotal == 0:
+                st.error(
+                    f"Could not index any receipts. "
+                    f"Error: {first_error or 'Unknown error'}. "
+                    "Check that your API key has access to the Gemini embedding model "
+                    "(`models/text-embedding-004`)."
+                )
+                # Reset so next render retries
+                st.session_state.vector_store = None
+                st.session_state.rag_receipt_count = 0
+                st.stop()
+
             st.session_state.vector_store = store
             st.session_state.rag_receipt_count = len(history)
-            if failed:
-                st.warning(f"{failed} receipt(s) could not be indexed and will be skipped.")
+            if first_error:
+                st.warning(f"Some receipts could not be indexed: {first_error}")
 
         vector_store = st.session_state.vector_store
 
