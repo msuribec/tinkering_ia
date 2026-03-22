@@ -8,6 +8,17 @@ from PIL import Image
 import io
 from typing import Optional
 
+default_categories = [
+        "Food & Groceries",
+        "Transport",
+        "Entertainment",
+        "Health & Beauty",
+        "Household",
+        "Clothing",
+        "Utilities",
+        "Other"
+]
+
 st.set_page_config(
     page_title="My-Expense Auditor",
     page_icon="💰",
@@ -185,6 +196,7 @@ if "approved_categories" not in st.session_state:
 
 categories: list[str] = []
 categories_valid = False
+use_default_categories = False
 
 if api_key and not categories_file:
     st.header("Step 2 - Upload your categories file in the sidebar.")
@@ -193,35 +205,28 @@ if api_key and not categories_file:
     st.markdown("The default categories are: \n Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
         "Household\nClothing\nUtilities\nOther")
     
-    default_categories = [
-        "Food & Groceries",
-        "Transport",
-        "Entertainment",
-        "Health & Beauty",
-        "Household",
-        "Clothing",
-        "Utilities",
-        "Other"
-    ]
-
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
-        categories_valid = True
-        categories = default_categories
+        categories_file = True
 
 if api_key and categories_file:
 
     if categories:
-        current_signature = f"{categories_file.name}:{categories_file.size}"
-        if st.session_state.categories_signature != current_signature:
-            st.session_state.categories_signature = current_signature
-            st.session_state.categories_approved = False
-            st.session_state.approved_categories = []
+        if use_default_categories:
+            categories = default_categories
+            categories_valid = True
+        else:
+            current_signature = f"{categories_file.name}:{categories_file.size}"
+            if st.session_state.categories_signature != current_signature:
+                st.session_state.categories_signature = current_signature
+                st.session_state.categories_approved = False
+                st.session_state.approved_categories = []
 
-        st.markdown(f"**{len(categories)} categories where loaded from the file:**")
-        for c in categories:
-            st.markdown(f"- {c}")
+            st.markdown(f"**{len(categories)} categories where loaded from the file:**")
+            for c in categories:
+                st.markdown(f"- {c}")
 
-        categories_valid = True
+            categories_valid = True
+
         if not st.session_state.categories_approved:
             if st.button("✅ Approve Categories", type="primary", use_container_width=True):
                 st.session_state.categories_approved = True
