@@ -206,13 +206,19 @@ if api_key and not categories_file:
     st.markdown("The default categories are:")
     st.markdown("- " + "\n- ".join(default_categories))
     
-    if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
-        categories_valid = True
-        categories = default_categories
-        st.session_state.categories_approved = True
+    
+
+    if not st.session_state.categories_approved:
+        if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
+            categories_valid = True
+            categories = default_categories
+            st.session_state.categories_approved = True
+            st.session_state.approved_categories = categories
+            st.rerun()
+        st.info("Please approve these categories to continue.")
+    else:
         st.session_state.approved_categories = categories
-        st.success("Using default categories. Continue with receipt upload below.")
-        st.rerun()
+        st.success("Categories approved. Continue with receipt upload below.")
 
 elif api_key and categories_file:
     try:
