@@ -64,6 +64,7 @@ def _init_state() -> None:
         "categories_signature": "",
         "approved_categories": [],
         "receipt_history": [],  # list[dict] — one entry per analyzed receipt
+        "editing_receipt_index": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -82,6 +83,53 @@ def restart_streamlit_app() -> None:
         del st.session_state[key]
     st.session_state["widget_seed"] = next_seed
     st.rerun()
+
+
+def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8")
+
+
+def build_categories_export_csv(categories: list[str]) -> bytes:
+    return dataframe_to_csv_bytes(pd.DataFrame({"category": categories}))
+
+
+def build_spending_export_csv(history: list[dict]) -> bytes:
+    rows = []
+    for index, entry in enumerate(history, start=1):
+        data = entry.get("data", {})
+        vendor = data.get("vendor", "Unknown")
+        date = data.get("date", "Unknown")
+        currency = data.get("currency", "$")
+        receipt_total = float(data.get("total", 0) or 0)
+
+        for item in data.get("items", []):
+            rows.append(
+                {
+                    "receipt_index": index,
+                    "vendor": vendor,
+                    "date": date,
+                    "currency": currency,
+                    "item": item.get("name", ""),
+                    "price": float(item.get("price", 0) or 0),
+                    "category": item.get("category", ""),
+                    "receipt_total": receipt_total,
+                }
+            )
+
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "receipt_index",
+            "vendor",
+            "date",
+            "currency",
+            "item",
+            "price",
+            "category",
+            "receipt_total",
+        ],
+    )
+    return dataframe_to_csv_bytes(df)
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -114,6 +162,34 @@ with st.sidebar:
         )
     else:
         st.caption("Enter your API key to unlock category upload.")
+
+    st.markdown("---")
+    st.header("Export data")
+    approved_categories = st.session_state.approved_categories
+    categories_csv = build_categories_export_csv(approved_categories)
+    st.download_button(
+        "Download categories CSV",
+        data=categories_csv,
+        file_name="expense_categories.csv",
+        mime="text/csv",
+        use_container_width=True,
+        disabled=not st.session_state.categories_approved,
+    )
+    if not st.session_state.categories_approved:
+        st.caption("Approve categories to enable category export.")
+
+    spending_history = st.session_state.receipt_history
+    spending_csv = build_spending_export_csv(spending_history) if spending_history else b""
+    st.download_button(
+        "Download spending CSV",
+        data=spending_csv,
+        file_name="spending_data.csv",
+        mime="text/csv",
+        use_container_width=True,
+        disabled=not spending_history,
+    )
+    if not spending_history:
+        st.caption("Analyze at least one receipt to export spending data.")
 
     st.markdown("---")
     if st.button("End session", use_container_width=True):
@@ -212,7 +288,138 @@ def generate_audio(tip: str, lang_code: str) -> tuple[bytes, str]:
     return buf.read(), lang
 
 
-def render_receipt_result(entry: dict) -> None:
+def normalize_edited_items(items_df: pd.DataFrame, categories: list[str]) -> tuple[list[dict], list[str]]:
+    cleaned_items: list[dict] = []
+    errors: list[str] = []
+
+    for row_number, row in enumerate(items_df.to_dict("records"), start=1):
+        raw_name = row.get("name", "")
+        raw_category = row.get("category", "")
+        raw_price = row.get("price", None)
+
+        name = "" if pd.isna(raw_name) else str(raw_name).strip()
+        category = "" if pd.isna(raw_category) else str(raw_category).strip()
+        price_missing = raw_price is None or pd.isna(raw_price)
+
+        if not name and not category and price_missing:
+            continue
+
+        if not name:
+            errors.append(f"Row {row_number}: item name is required.")
+
+        if category not in categories:
+            errors.append(f"Row {row_number}: category must be one of the approved categories.")
+
+        try:
+            price = float(raw_price)
+        except (TypeError, ValueError):
+            errors.append(f"Row {row_number}: price must be a valid number.")
+            continue
+
+        if price < 0:
+            errors.append(f"Row {row_number}: price cannot be negative.")
+
+        if name and category in categories and price >= 0:
+            cleaned_items.append(
+                {
+                    "name": name,
+                    "price": round(price, 2),
+                    "category": category,
+                }
+            )
+
+    if not cleaned_items:
+        errors.append("Add at least one valid item before saving.")
+
+    return cleaned_items, errors
+
+
+def rebuild_receipt_data(
+    original_data: dict,
+    vendor: str,
+    date: str,
+    currency: str,
+    items: list[dict],
+) -> dict:
+    category_totals: dict[str, float] = {}
+    total = 0.0
+
+    for item in items:
+        price = round(float(item["price"]), 2)
+        category = item["category"]
+        total += price
+        category_totals[category] = round(category_totals.get(category, 0.0) + price, 2)
+
+    return {
+        **original_data,
+        "vendor": vendor.strip() or "Unknown",
+        "date": date.strip() or "Unknown",
+        "currency": currency.strip() or "$",
+        "items": items,
+        "total": round(total, 2),
+        "category_totals": category_totals,
+        "savings_tip": "",
+        "tip_language": "",
+    }
+
+
+def render_receipt_editor(index: int, entry: dict, categories: list[str]) -> None:
+    data = entry["data"]
+    items_df = pd.DataFrame(data.get("items", []), columns=["name", "price", "category"])
+
+    with st.expander("Edit receipt details", expanded=True):
+        with st.form(f"edit_receipt_form_{index}"):
+            vendor = st.text_input("Vendor", value=data.get("vendor", ""))
+            date = st.text_input("Date", value=data.get("date", ""))
+            currency = st.text_input("Currency", value=data.get("currency", "$"))
+            edited_items_df = st.data_editor(
+                items_df,
+                key=f"receipt_items_editor_{index}",
+                num_rows="dynamic",
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "name": st.column_config.TextColumn("Item"),
+                    "price": st.column_config.NumberColumn(
+                        "Price",
+                        min_value=0.0,
+                        step=0.01,
+                        format="%.2f",
+                    ),
+                    "category": st.column_config.SelectboxColumn("Category", options=categories),
+                },
+            )
+
+            save_col, cancel_col = st.columns(2)
+            save_clicked = save_col.form_submit_button(
+                "Save changes",
+                type="primary",
+                use_container_width=True,
+            )
+            cancel_clicked = cancel_col.form_submit_button(
+                "Cancel",
+                use_container_width=True,
+            )
+
+        if cancel_clicked:
+            st.session_state.editing_receipt_index = None
+            st.rerun()
+
+        if save_clicked:
+            cleaned_items, errors = normalize_edited_items(edited_items_df, categories)
+            if errors:
+                for error in errors:
+                    st.error(error)
+                return
+
+            updated_data = rebuild_receipt_data(data, vendor, date, currency, cleaned_items)
+            st.session_state.receipt_history[index]["data"] = updated_data
+            st.session_state.receipt_history[index]["audio_bytes"] = None
+            st.session_state.editing_receipt_index = None
+            st.rerun()
+
+
+def render_receipt_result(index: int, entry: dict, categories: list[str]) -> None:
     """Render one analyzed receipt inside an assistant chat bubble."""
     data = entry["data"]
     currency = data.get("currency", "$")
@@ -254,6 +461,15 @@ def render_receipt_result(entry: dict) -> None:
         if entry.get("audio_bytes"):
             st.audio(entry["audio_bytes"], format="audio/mp3")
             st.caption("🔊 Listen to your personalised savings tip")
+
+    is_editing = st.session_state.editing_receipt_index == index
+    button_label = "Close editor" if is_editing else "Edit receipt"
+    if st.button(button_label, key=f"edit_receipt_button_{index}", use_container_width=True):
+        st.session_state.editing_receipt_index = None if is_editing else index
+        st.rerun()
+
+    if is_editing:
+        render_receipt_editor(index, entry, categories)
 
 
 # ── Categories gate ───────────────────────────────────────────────────────────
@@ -330,11 +546,11 @@ tab_chat, tab_dash = st.tabs(["📨 Receipts", "📊 Dashboard"])
 # ── Tab 1: Chat interface ─────────────────────────────────────────────────────
 with tab_chat:
     # Render history
-    for entry in st.session_state.receipt_history:
+    for index, entry in enumerate(st.session_state.receipt_history):
         with st.chat_message("user"):
             st.image(entry["image_bytes"], width=260)
         with st.chat_message("assistant"):
-            render_receipt_result(entry)
+            render_receipt_result(index, entry, categories)
 
     st.divider()
     st.markdown("#### Upload a new receipt")
