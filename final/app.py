@@ -209,6 +209,8 @@ if api_key and not categories_file:
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
         categories_valid = True
         categories = default_categories
+        st.session_state.approved_categories = categories
+        st.success("Using default categories. Continue with receipt upload below.")
 
 elif api_key and categories_file:
     try:
