@@ -9,10 +9,10 @@ import io
 from typing import Optional
 
 default_categories = [
-        "Food & Groceries",
-        "Transport",
-        "Entertainment",
-        "Health & Beauty",
+    "Food & Groceries",
+    "Transport",
+    "Entertainment",
+    "Health & Beauty",
         "Household",
         "Clothing",
         "Utilities",
@@ -203,8 +203,8 @@ if api_key and not categories_file:
     st.header("Step 2 - Upload your categories file in the sidebar.")
     st.caption("You can upload a `.txt` with one category per line, or `.csv` with a `category` column.")
     st.info("If you don't have a custom categories file, you can download click the 'Use default' button")
-    st.markdown("The default categories are: \n Food & Groceries\nTransport\nEntertainment\nHealth & Beauty\n"
-        "Household\nClothing\nUtilities\nOther")
+    st.markdown("The default categories are:")
+    st.markdown("- " + "\n- ".join(default_categories))
     
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
         categories_valid = True
