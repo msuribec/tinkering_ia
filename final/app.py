@@ -6,6 +6,7 @@ import json
 import re
 from PIL import Image
 import io
+from typing import Optional
 
 st.set_page_config(
     page_title="My-Expense Auditor",
@@ -52,10 +53,46 @@ def parse_categories(file) -> list[str]:
     return [line.strip() for line in content.splitlines() if line.strip()]
 
 
+def pick_supported_model() -> Optional[str]:
+    """
+    Pick the best available Gemini model that supports generateContent.
+    Returns the model name in "models/..." format or None if discovery fails.
+    """
+    preferred = [
+        "models/gemini-2.5-flash",
+        "models/gemini-2.5-flash-lite",
+        "models/gemini-2.0-flash",
+        "models/gemini-1.5-flash",
+    ]
+
+    try:
+        models = list(genai.list_models())
+    except Exception:
+        return None
+
+    supported = {
+        m.name
+        for m in models
+        if hasattr(m, "supported_generation_methods")
+        and "generateContent" in m.supported_generation_methods
+    }
+
+    for candidate in preferred:
+        if candidate in supported:
+            return candidate
+
+    for name in supported:
+        if "gemini" in name and "vision" not in name:
+            return name
+
+    return None
+
+
 # ── Helper: call Gemini Vision ────────────────────────────────────────────────
 
 def analyze_receipt(image_bytes: bytes, categories: list[str]) -> dict:
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    chosen_model = pick_supported_model() or "models/gemini-2.0-flash"
+    model = genai.GenerativeModel(chosen_model)
     pil_image = Image.open(io.BytesIO(image_bytes))
 
     categories_block = "\n".join(f"  - {c}" for c in categories)
