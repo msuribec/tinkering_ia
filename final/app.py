@@ -402,7 +402,7 @@ Schema:
     return data.get("suggested_categories", [])
 
 
-def generate_history_tips(history: list[dict]) -> list[str]:
+def generate_history_tips(history: list[dict]) -> dict:
     chosen_model = pick_supported_model() or "models/gemini-2.0-flash"
     model = genai.GenerativeModel(chosen_model)
     history_summary = json.dumps(build_history_summary(history), ensure_ascii=False)
@@ -421,14 +421,18 @@ TASKS:
 Return ONLY a valid JSON object — no markdown fences, no extra text.
 Schema:
 {{
-  "tips": ["string", "string", "string"]
+  "tips": ["string", "string", "string"],
+  "tip_language": "ISO 639-1 code, e.g. es or en"
 }}"""
     response = model.generate_content(prompt)
     raw = response.text.strip()
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
     data = json.loads(raw)
-    return [tip.strip() for tip in data.get("tips", []) if isinstance(tip, str) and tip.strip()]
+    return {
+        "tips": [tip.strip() for tip in data.get("tips", []) if isinstance(tip, str) and tip.strip()],
+        "tip_language": str(data.get("tip_language", "es")).strip() or "es",
+    }
 
 
 def generate_audio(tip: str, lang_code: str) -> tuple[bytes, str]:
@@ -891,7 +895,19 @@ with tab_suggestions:
         ):
             with st.spinner("Reviewing your purchase history for savings tips..."):
                 try:
-                    st.session_state.history_purchase_tips = generate_history_tips(history)
+                    tip_payload = generate_history_tips(history)
+                    tip_language = tip_payload.get("tip_language", "es")
+                    history_tip_entries = []
+                    for tip_text in tip_payload.get("tips", []):
+                        audio_bytes, detected_lang = generate_audio(tip_text, tip_language)
+                        history_tip_entries.append(
+                            {
+                                "tip": tip_text,
+                                "audio_bytes": audio_bytes,
+                                "tip_language": detected_lang,
+                            }
+                        )
+                    st.session_state.history_purchase_tips = history_tip_entries
                 except json.JSONDecodeError:
                     st.error("The model returned an unexpected response for history tips. Please try again.")
                 except Exception as exc:
@@ -917,7 +933,10 @@ with tab_suggestions:
         st.markdown("**Tips Based on All Purchase History**")
         history_tips = st.session_state.history_purchase_tips
         if history_tips:
-            for tip in history_tips:
-                st.info(f"🎯 {tip}")
+            for tip_entry in history_tips:
+                tip_text = tip_entry.get("tip", "") if isinstance(tip_entry, dict) else str(tip_entry)
+                st.info(f"🎯 {tip_text}")
+                if isinstance(tip_entry, dict) and tip_entry.get("audio_bytes"):
+                    st.audio(tip_entry["audio_bytes"], format="audio/mp3")
         else:
             st.caption("No history tips generated yet.")
