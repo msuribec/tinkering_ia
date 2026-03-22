@@ -209,8 +209,8 @@ if api_key and not categories_file:
     if st.button("✅ Use default expense categories", type="primary", use_container_width=True):
         categories_valid = True
         categories = default_categories
-
-if api_key and categories_file:
+        
+elif api_key and categories_file:
     if categories:
 
         current_signature = f"{categories_file.name}:{categories_file.size}"
