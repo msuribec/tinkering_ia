@@ -12,6 +12,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from rag import ReceiptVectorStore, answer_question
 
+
+
 SPENDING_EXPORT_COLUMNS = [
     "receipt_index",
     "vendor",
@@ -1581,7 +1583,6 @@ with tab_search:
                     f"Could not index any receipts. "
                     f"Error: {first_error or 'Unknown error'}. "
                     "Check that your API key has access to the Gemini embedding model "
-                    "(`models/text-embedding-004`)."
                 )
                 # Reset so next render retries
                 st.session_state.vector_store = None

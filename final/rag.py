@@ -5,8 +5,8 @@ import faiss
 import google.generativeai as genai
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-
-EMBEDDING_DIM = 768  # text-embedding-004 output size
+EMBEDDING_MODEL = "gemini-embedding-001"
+EMBEDDING_DIM = 768  # text embedding output size
 NUMERIC_KEYWORDS = {"total", "sum", "how much", "spent", "cost", "amount", "price"}
 
 
@@ -48,9 +48,9 @@ def receipt_to_text(receipt: dict) -> str:
 # ── Embeddings ────────────────────────────────────────────────────────────────
 
 def embed_text(text: str, task_type: str = "retrieval_document") -> list[float]:
-    """Embed text using Gemini text-embedding-004. Returns a 768-dim float list."""
+    """Embed. Returns a 768-dim float list."""
     result = genai.embed_content(
-        model="models/gemini-embedding-2-preview",
+        model=f"models/{EMBEDDING_MODEL}",
         content=text,
         task_type=task_type,
     )
